@@ -212,11 +212,35 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
         \assert($path !== null);
 
         $entityManager = $query->getEntityManager();
+        // A path starting with `pivot` reads the pivot row the relation's pivot query
+        // joined as `pivot`, whichever alias the sort is applied on: a cursor level asks
+        // on the root.
+        $hops = $path->hops;
+        $refusedRow = false;
+        if ($path->startsWithPivot()) {
+            $alias = 'pivot';
+            $refusedRow = $this->paths?->refuses($hops[0]->relation) === true;
+            unset($hops[0]);
+        }
         $metadata = $this->metadataOfAlias($query, $alias)
-            ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to sort on.', $alias));
+            ?? throw new \LogicException($path->startsWithPivot()
+                ? \sprintf('Sort "%s" reaches through "%s", which starts at the pivot row of the relation it runs under, but it runs on a query that joins no pivot row.', $sort->key(), $path->path)
+                : \sprintf('The QueryBuilder has no entity at alias "%s" to sort on.', $alias));
         $current = $alias;
         $joined = self::joinedAliases($query);
-        foreach ($path->hops as $index => $hop) {
+        if ($refusedRow && $hops === []) {
+            // A default order may not read the relation, so it reads null for its pivot row.
+            $next = 'jsonapi_through_' . \substr(\md5($alias . '|refused|' . $path->path), 0, 12);
+            if (!isset($joined[$next])) {
+                $query->leftJoin($metadata->getName(), $next, 'WITH', '1 = 0');
+            }
+
+            return [$this->path($leaf->column, $next), $metadata, $leaf->column];
+        }
+        foreach ($hops as $index => $hop) {
+            if ($hop->pivot) {
+                throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", whose pivot row a sort can read only at the start of its path.', $sort->key(), $path->path));
+            }
             $association = $hop->storage();
             if (!$metadata->hasAssociation($association) || !$metadata->isSingleValuedAssociation($association)) {
                 throw new \LogicException(\sprintf('Sort "%s" reaches through "%s", but "%s" is not a to-one association on "%s".', $sort->key(), $path->path, $association, $metadata->getName()));
@@ -224,7 +248,7 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
             $next = 'jsonapi_through_' . \substr(\md5($alias . '|' . \implode('.', \array_slice($path->storageSegments(), 0, $index + 1))), 0, 12);
             $target = $entityManager->getClassMetadata($metadata->getAssociationTargetClass($association));
             if (!isset($joined[$next])) {
-                $condition = $this->scopeCondition($query, $next, $target, $hop->relatedType(), $hop->relation);
+                $condition = $refusedRow ? '1 = 0' : $this->scopeCondition($query, $next, $target, $hop->relatedType(), $hop->relation);
                 $condition === null
                     ? $query->leftJoin($current . '.' . $association, $next)
                     : $query->leftJoin($current . '.' . $association, $next, 'WITH', $condition);

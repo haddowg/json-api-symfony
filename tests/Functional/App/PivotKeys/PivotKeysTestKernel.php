@@ -123,6 +123,7 @@ final class PivotKeysTestKernel extends Kernel
 
         $services->set(PkTemplateResource::class);
         $services->set(PkDefinitionResource::class);
+        $services->set(PkPlaceholderTargetResource::class);
         if (\in_array(self::$variant, ['named', 'clash'], true)) {
             $services->set(PkLabelledDefinitionResource::class);
         }

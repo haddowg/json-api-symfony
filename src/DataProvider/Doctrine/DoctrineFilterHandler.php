@@ -39,6 +39,7 @@ use haddowg\JsonApi\Resource\Filter\WhereSetMatch;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Through\FiltersThrough;
+use haddowg\JsonApi\Resource\Through\RelationPath;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\ReadsFilterPathsInterface;
@@ -534,36 +535,119 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $leafValue = $filter->leafValue($value);
         $stem = 'jsonapi_through_' . ++$this->subqueries . '_';
 
+        if ($path->reachesPivot()) {
+            return $this->throughPivot($query, $filter, $path, $leafFilter, $leafValue, $alias, $stem);
+        }
+
         $sub = $this->existsSubquery(
             $query,
             $path->storageSegments(),
             function (QueryBuilder $sub, string $leafAlias) use ($query, $leafFilter, $leafValue, $path, $stem): void {
-                [$decoded, $placeholders] = [$this->decodedLeaf, $this->placeholderStem];
-                $this->decodedLeaf = true;
-                $this->placeholderStem = $stem;
-                try {
-                    $leafRelation = $path->leafRelation();
-                    if ($leafRelation !== null && ($leafFilter instanceof WhereHas || $leafFilter instanceof WhereDoesntHave)) {
-                        $exists = $sub->expr()->exists($this->existsSubquery($sub, [$leafRelation->column() ?? $leafRelation->name()], null, $leafAlias, false, [$leafRelation])->getDQL());
-                        $sub->andWhere($leafFilter instanceof WhereDoesntHave ? $sub->expr()->not($exists) : $exists);
-                    } else {
-                        $this->applyOn($leafFilter, $sub, $leafValue, $leafAlias);
-                    }
-                } finally {
-                    [$this->decodedLeaf, $this->placeholderStem] = [$decoded, $placeholders];
-                }
-                // The leaf bound on the subquery; the outer query executes it. A name the
-                // outer query binds already is an extension's, bound to the same value.
-                foreach ($sub->getParameters() as $parameter) {
-                    if ($query->getParameter($parameter->getName()) === null) {
-                        $query->getParameters()->add($parameter);
-                    }
-                }
+                $this->applyThroughLeaf($query, $sub, $leafAlias, $leafFilter, $leafValue, $path, $stem);
             },
             $alias,
             true,
             \array_map(static fn(RelationHop $hop): RelationInterface => $hop->relation, $path->hops),
         );
+
+        return $query->andWhere($query->expr()->exists($sub->getDQL()));
+    }
+
+    /**
+     * Applies a `->through()` filter's leaf at `$leafAlias` of `$sub`: an existence filter
+     * tests the relation the reached row holds as one more scoped hop, any other filter
+     * runs through its own arm with its value decoded already. The leaf's parameters move
+     * onto the outer `$query`, which executes the `EXISTS`.
+     */
+    private function applyThroughLeaf(QueryBuilder $query, QueryBuilder $sub, string $leafAlias, FilterInterface $leafFilter, mixed $leafValue, RelationPath $path, string $stem): void
+    {
+        [$decoded, $placeholders] = [$this->decodedLeaf, $this->placeholderStem];
+        $this->decodedLeaf = true;
+        $this->placeholderStem = $stem;
+        try {
+            $leafRelation = $path->leafRelation();
+            if ($leafRelation !== null && ($leafFilter instanceof WhereHas || $leafFilter instanceof WhereDoesntHave)) {
+                $exists = $sub->expr()->exists($this->existsSubquery($sub, [$leafRelation->column() ?? $leafRelation->name()], null, $leafAlias, false, [$leafRelation])->getDQL());
+                $sub->andWhere($leafFilter instanceof WhereDoesntHave ? $sub->expr()->not($exists) : $exists);
+            } else {
+                $this->applyOn($leafFilter, $sub, $leafValue, $leafAlias);
+            }
+        } finally {
+            [$this->decodedLeaf, $this->placeholderStem] = [$decoded, $placeholders];
+        }
+        if ($sub === $query) {
+            return;
+        }
+        // The leaf bound on the subquery; the outer query executes it. A name the
+        // outer query binds already is an extension's, bound to the same value.
+        foreach ($sub->getParameters() as $parameter) {
+            if ($query->getParameter($parameter->getName()) === null) {
+                $query->getParameters()->add($parameter);
+            }
+        }
+    }
+
+    /**
+     * A `->through()` filter whose path reaches a pivot row. A path starting with `pivot`
+     * reads the pivot row the relation's pivot query joined as `pivot`, so it runs only
+     * there, and a path that ends on it applies the leaf to that row directly. Anywhere
+     * else one correlated `EXISTS` roots on a copy of the row being filtered and joins
+     * each hop: a relation as {@see joinHop()} does, and a `pivot` hop the association
+     * entity's rows linking the current row to a member, with that member joined and
+     * scoped by its type's query extensions, so a link to a hidden member never matches.
+     * Every relation the pivot row holds is scoped the same way.
+     */
+    private function throughPivot(QueryBuilder $query, FiltersThrough $filter, RelationPath $path, FilterInterface $leafFilter, mixed $leafValue, string $alias, string $stem): QueryBuilder
+    {
+        $hops = $path->hops;
+        if ($path->startsWithPivot()) {
+            if ($alias !== 'pivot') {
+                throw new \LogicException(\sprintf('Filter "%s" reaches through "%s", which starts at the pivot row of the relation it runs under, but it runs on a query that joins no pivot row.', $filter->key(), $path->path));
+            }
+            $hops = \array_slice($hops, 1);
+            if ($hops === []) {
+                $this->applyThroughLeaf($query, $query, 'pivot', $leafFilter, $leafValue, $path, $stem);
+
+                return $query;
+            }
+        }
+
+        $entityManager = $query->getEntityManager();
+        $ownerMetadata = $this->metadataOfAlias($query, $alias)
+            ?? throw new \LogicException(\sprintf('The QueryBuilder has no entity at alias "%s" to filter on.', $alias));
+        $walk = 'jsonapi_has_' . ++$this->subqueries;
+        $current = $walk . '_owner';
+        $sub = $entityManager->createQueryBuilder()
+            ->select('1')
+            ->from($ownerMetadata->getName(), $current)
+            ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $current), DoctrineIdentifiers::entity($ownerMetadata, $alias)));
+        $currentMetadata = $ownerMetadata;
+
+        foreach ($hops as $index => $hop) {
+            if (!$hop->pivot) {
+                [$current, $currentMetadata] = $this->joinHop($sub, $current, $currentMetadata, $hop->storage(), $hop->relation);
+                $this->scopeHop($query, $sub, $current, $currentMetadata, $hop->relation);
+
+                continue;
+            }
+
+            $relation = $hop->relation;
+            /** @var class-string $ownerClass */
+            $ownerClass = $currentMetadata->getName();
+            $association = $relation instanceof BelongsToMany && $this->pivotAssociation !== null ? ($this->pivotAssociation)($relation, $ownerClass) : null;
+            if ($association === null) {
+                throw new \LogicException(\sprintf('Filter "%s" reaches through "%s", but the Doctrine provider reads no pivot rows of "%s" from %s.', $filter->key(), $path->path, $relation->name(), $ownerClass));
+            }
+            $row = $walk . '_row' . $index;
+            $member = $walk . '_member' . $index;
+            $sub->innerJoin($association->entityClass, $row, 'WITH', DoctrineIdentifiers::joins($row . '.' . $association->parentProperty, $currentMetadata, $current))
+                ->innerJoin(\sprintf('%s.%s', $row, $association->farProperty), $member);
+            $rowMetadata = $entityManager->getClassMetadata($association->entityClass);
+            $this->scopeHop($query, $sub, $member, $entityManager->getClassMetadata($rowMetadata->getAssociationTargetClass($association->farProperty)), $relation);
+            [$current, $currentMetadata] = [$row, $rowMetadata];
+        }
+
+        $this->applyThroughLeaf($query, $sub, $current, $leafFilter, $leafValue, $path, $stem);
 
         return $query->andWhere($query->expr()->exists($sub->getDQL()));
     }
@@ -651,8 +735,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $ownerEntity = $ownerMetadata->getName();
 
         $entityManager = $query->getEntityManager();
-        // A pivot row's own paths are its entity's associations, not the related type's relations.
-        $relations ??= $alias === 'pivot' ? [] : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
+        // A pivot row's own paths walk the relations its association entity holds, not the related type's.
+        $relations ??= $alias === 'pivot'
+            ? $this->paths?->pivotRelationsAlong('pivot.' . \implode('.', $segments)) ?? []
+            : $this->paths?->relationsAlong(\implode('.', $segments)) ?? [];
 
         // The first segment is the owning relationship; resolve its target as the
         // RELATED root and split off any remaining intermediate relationships and

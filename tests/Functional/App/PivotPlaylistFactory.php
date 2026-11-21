@@ -14,6 +14,11 @@ use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
  */
 final class PivotPlaylistFactory
 {
+    public static function createSetlistsProvider(): InMemoryDataProvider
+    {
+        return new InMemoryDataProvider('setlists', ['1' => new PivotPlaylist('1', 'Set', [new PivotTrack('1', 'Intro')])]);
+    }
+
     public static function createProvider(): InMemoryDataProvider
     {
         $playlists = [

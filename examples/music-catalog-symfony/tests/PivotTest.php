@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Examples\MusicCatalog\Tests;
 
+use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -147,6 +148,32 @@ final class PivotTest extends MusicCatalogKernelTestCase
         $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/orderedTracks?filter[position]=2');
 
         self::assertSame(['1'], $this->ids($document));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
+    public function aFilterThroughThePivotRowReadsItsPivotField(): void
+    {
+        // Exit Music (3) was added on 1 April, Airbag (1) on 2 April; Paranoid Android is
+        // hidden by the tracks' explicit default.
+        $document = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/orderedTracks?filter[addedAt][min]=2024-04-01T12:00:00Z');
+        self::assertSame(['1'], $this->ids($document));
+
+        $relationship = $this->fetch('/playlists/' . self::PLAYLIST_ID . '/relationships/orderedTracks?filter[addedAt][max]=2024-04-01T12:00:00Z');
+        self::assertSame(['3'], $this->ids($relationship));
+
+        $response = $this->handle(
+            '/playlists/' . self::PLAYLIST_ID . '?include=orderedTracks&relatedQuery[orderedTracks][filter][addedAt][min]=2024-04-01T12:00:00Z',
+            extraServer: ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"'],
+        );
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $linkage = $this->decode($response)['data'] ?? null;
+        foreach (['relationships', 'orderedTracks', 'data'] as $key) {
+            self::assertIsArray($linkage);
+            $linkage = $linkage[$key] ?? null;
+        }
+        self::assertIsArray($linkage);
+        self::assertSame(['1'], \array_values(\array_map(static fn(mixed $member): mixed => \is_array($member) ? $member['id'] ?? null : null, $linkage)));
     }
 
     #[Test]

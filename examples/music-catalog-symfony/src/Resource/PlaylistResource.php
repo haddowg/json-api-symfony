@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Slug;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Uuid;
+use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Playlist;
@@ -222,9 +223,16 @@ class PlaylistResource extends AbstractResource implements ResourceLifecycleHook
                 // type off `pivot.position` the way it would off a plain column, and
                 // without the constraint the documented value falls back to a plain
                 // `string` rather than the integer it really is.
+                //
+                // `filter[addedAt]` reaches the same pivot row through `->through('pivot')`,
+                // the pivot row of the relation the filter runs under, so the range reads the
+                // `addedAt` pivot field as declared: an RFC 3339 range, typed in the document
+                // from the field, on the related and relationship endpoints and in
+                // `relatedQuery[orderedTracks][filter]`.
                 ->withFilters(
                     Where::make('position', 'pivot.position')->integer(),
                     Where::make('weight', 'pivot.weight')->integer(),
+                    DateRange::make('addedAt', 'addedAt')->through('pivot')->describedAs('When the track was added to the playlist.'),
                 )
                 ->extractUsing(static function (mixed $playlist): array {
                     // The generic engine instantiates the entity without its

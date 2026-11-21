@@ -92,6 +92,7 @@ declaration that would only break at request time fails the build instead:
 |---|---|
 | A `sortable()` / `filterable` column does not resolve to a real field/association (commonly a `computed()` field marked sortable, whose sort column defaults to the field name) | *The sort/filter "…" on JSON:API type "…" targets column "…", which is not a field or association on …* |
 | A pivot `belongsToMany` declaring a stored pivot field whose association entity cannot be discovered (one whose pivot fields are all computed needs none) | *Could not auto-detect a Doctrine association entity for the pivot relation "…" … Declare it explicitly with ->through(PivotEntity::class).* |
+| A deprecated `pivot.`-prefixed `WhereThrough`, `WhereThroughIn`, `WhereHas` or `WhereDoesntHave`, or a `pivot.`-prefixed `WhereHasMatching`, whose path goes on from the pivot row to an entity no registered type serves, or several do | *The JSON:API resource for type "…" declares the filter "…" of relation "…", whose deprecated path "…" goes on from the pivot row to an entity no single registered type serves … Register exactly one resource type for that entity, or migrate the filter to a ->through() path that does not reach it.* |
 | A `WhereMorph` over a `MorphTo` identified only by a closure, or not at all, or over a `MorphToMany` without `identifiedByRows()` | *The filter "…" on JSON:API type "…" is a WhereMorph over the relation "…", which the Doctrine provider cannot query: declare the MorphTo with identifiedByColumns(type: ..., id: ...)…* |
 | A `WhereMorph` whose `MorphTo` names a column that is not a mapped field of the entity | *… whose identifiedByColumns() names "…", which is not a mapped field of …* |
 
@@ -844,7 +845,9 @@ its arm like any custom filter. The same matching runs for the primary collectio
 related and relationship endpoints, `relatedQuery[<path>][filter]`, `?withCount`
 counts and a collection action's filters. The cache warmer cannot check a family's
 columns, since it resolves them only against a request. A traversal filter a family
-returns has its path resolved then too.
+returns has its path resolved then too. On a relation read through its pivot rows, a
+`pivot.`-prefixed path that reaches an entity no single registered type serves, which the
+warmer refuses on a declared filter, answers `500` and logs the family and the path.
 
 Source: [`DoctrineFilterHandler`](../src/DataProvider/Doctrine/DoctrineFilterHandler.php).
 
@@ -904,6 +907,31 @@ not an association of the entity it starts from (a pivot `belongsToMany` is join
 through its association entity), a hop into a type no entity maps or one a provider
 other than Doctrine scopes, and a leaf that is not a field or association of the reached
 entity.
+
+#### Paths through a pivot row
+
+A `pivot` segment in the path reaches the pivot rows of a `belongsToMany` with stored pivot
+fields, over the association entity behind it. A path that starts with `pivot` reads the
+pivot row of the relation it runs under, which the relation's pivot query has joined as
+`pivot`, so it applies wherever the `pivot.` column filters do: the related and relationship
+endpoints and `relatedQuery[<relation>][filter]`. Ending there, the filter applies to that
+row's pivot field. Elsewhere it is unrecognised, as a `pivot.` column filter is.
+
+A `pivot` in the middle of a path joins the association entity's rows linking the row
+before it to each member, inside the same `EXISTS`, with the member joined too and kept to
+the rows its type's query extensions admit, so a link to a hidden member never matches.
+
+After `pivot`, a segment names an association of the association entity, such as
+`pivot.addedBy`. The provider reads the type it reaches from the entity it targets: the one
+registered type whose entity that is. The warm-up refuses an association whose target no
+registered type serves, or several do, and a `pivot` after a relation the provider reads no
+pivot rows of, which includes a `morphToMany`: its link rows aren't walked by a path yet.
+From the type it reaches, the path is scoped and gated like any other hop. A `pivot` hop
+itself is gated by its relation's read permission.
+
+A sort takes only a leading `pivot`, and orders the relation's members by a pivot field or
+by a field of a to-one association of the pivot row, left-joined from `pivot`. The in-memory
+provider holds no pivot rows, so it refuses every filter whose path reaches one with a `400`.
 
 ### Relationship-existence filtering: `WhereHas`, `WhereThrough`, `WhereHasMatching`
 

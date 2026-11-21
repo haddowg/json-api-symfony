@@ -20,6 +20,7 @@ use haddowg\JsonApi\Resource\Filter\HasDefaultValue;
 use haddowg\JsonApi\Resource\Filter\RelationFilters;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
+use haddowg\JsonApi\Resource\Filter\WhereGroup;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereNotIn;
@@ -33,6 +34,8 @@ use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
+use haddowg\JsonApi\Resource\Through\ReachesThrough;
+use haddowg\JsonApi\Resource\Through\RelationPath;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
@@ -172,7 +175,7 @@ final class RelationCriteriaFactory
         ?string $parentType = null,
     ): CollectionCriteria {
         $relationFilters = $includePivotFields
-            ? $this->withPivotCasts($relation)
+            ? $this->withPivotCasts($relation, $parentType)
             : $this->withoutPivotFilters($relation->allFilters());
         $filters = $this->mergeFilters($this->relatedFilters($relatedResource, $relation), $relationFilters);
 
@@ -181,7 +184,7 @@ final class RelationCriteriaFactory
             $filters,
             SortMatcher::merge(
                 $relatedResource?->allSorts() ?? [],
-                self::relationSorts($relation, $relatedResource),
+                self::readableSorts(self::relationSorts($relation, $relatedResource), $includePivotFields || $pivotSorts),
                 $includePivotFields || $pivotSorts ? PivotFields::sortsFor($relation) : [],
             ),
             $window,
@@ -206,7 +209,7 @@ final class RelationCriteriaFactory
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $relation, $this->readRouter?->pivotRows(), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 
@@ -225,11 +228,11 @@ final class RelationCriteriaFactory
         return new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $request->getPagination()),
             filters: $this->linkageFilters($relatedResource, $relation),
-            sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], self::relationSorts($relation, $relatedResource), $pivotSorts ? PivotFields::sortsFor($relation) : []),
+            sorts: SortMatcher::merge($relatedResource?->allSorts() ?? [], self::readableSorts(self::relationSorts($relation, $relatedResource), $pivotSorts), $pivotSorts ? PivotFields::sortsFor($relation) : []),
             defaultSort: $this->defaultOrder($relation, $relatedResource, $pivotSorts),
             aliasOf: $pivotSorts ? $this->pivotSortAliases($relation) : [],
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $relation, $this->readRouter?->pivotRows(), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 
@@ -281,7 +284,7 @@ final class RelationCriteriaFactory
         }
 
         if (!$pivot) {
-            return $own;
+            return \array_values(\array_filter($own, static fn(SortDirective $directive): bool => !self::readsPivotRow($directive->sort)));
         }
 
         $pivotSorts = [];
@@ -344,8 +347,37 @@ final class RelationCriteriaFactory
         foreach (PivotFields::sortsFor($relation) as $sort) {
             $aliasOf[$sort->key()] = 'pivot';
         }
+        $own = $relation instanceof DefaultSortedRelationInterface ? \array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation->defaultSort()) : [];
+        foreach ([...$relation->sorts(), ...$own] as $sort) {
+            if (self::readsPivotRow($sort)) {
+                $aliasOf[$sort->key()] = 'pivot';
+            }
+        }
 
         return $aliasOf;
+    }
+
+    /**
+     * Whether a filter or sort reaches through a path starting at `pivot`, the pivot row
+     * of the relation it runs under, which only the provider's pivot query joins.
+     */
+    public static function readsPivotRow(FilterInterface|SortInterface $item): bool
+    {
+        $through = $item instanceof ReachesThrough ? $item->throughRelations() : null;
+
+        return $through !== null && \explode('.', $through)[0] === RelationPath::PIVOT;
+    }
+
+    /**
+     * `$sorts` without those reading the pivot row, off the pivot query.
+     *
+     * @param list<SortInterface> $sorts
+     *
+     * @return list<SortInterface>
+     */
+    private static function readableSorts(array $sorts, bool $pivot): array
+    {
+        return $pivot ? $sorts : \array_values(\array_filter($sorts, static fn(SortInterface $sort): bool => !self::readsPivotRow($sort)));
     }
 
     /**
@@ -362,16 +394,62 @@ final class RelationCriteriaFactory
      *
      * @return list<FilterInterface>
      */
-    private function withPivotCasts(RelationInterface $relation): array
+    private function withPivotCasts(RelationInterface $relation, ?string $parentType): array
     {
         $filters = [];
         foreach ($relation->allFilters() as $filter) {
             $filters[] = $filter instanceof FilterFamilyInterface
-                ? new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): FilterInterface => $this->withPivotCast($relation, $resolved))
+                ? new PivotTreatedFilterFamily($filter, fn(FilterInterface $resolved): FilterInterface => $this->withPivotCast($relation, $this->guardFamilyPivotPath($filter, $relation, $parentType, $resolved)))
                 : $this->withPivotCast($relation, $filter);
         }
 
         return $filters;
+    }
+
+    /**
+     * Refuses a filter `$family` resolves whose `pivot.`-prefixed path goes on from the pivot
+     * row to an entity no single registered type serves. The cache warm-up refuses such a
+     * declared filter, but a family resolves its filters per request, so the fault surfaces
+     * here as a `500` rather than walking those rows without any type's scope or read rules.
+     *
+     * @throws \LogicException
+     */
+    private function guardFamilyPivotPath(FilterFamilyInterface $family, RelationInterface $relation, ?string $parentType, FilterInterface $filter): FilterInterface
+    {
+        if ($filter instanceof WhereGroup) {
+            foreach ($filter->children as $child) {
+                $this->guardFamilyPivotPath($family, $relation, $parentType, $child);
+            }
+
+            return $filter;
+        }
+
+        $pivotRows = $this->readRouter?->pivotRows();
+        $path = match (true) {
+            $filter instanceof WhereHas, $filter instanceof WhereDoesntHave, $filter instanceof WhereHasMatching => $filter->relationship,
+            $filter instanceof WhereThrough, $filter instanceof WhereThroughIn => $filter->path,
+            default => '',
+        };
+        $segments = \explode('.', $path);
+        if ($pivotRows === null || $parentType === null || !$relation instanceof PivotRelationInterface || \count($segments) < 2 || $segments[0] !== 'pivot') {
+            return $filter;
+        }
+
+        try {
+            $pivotRows->pivotRowRelation($relation, $parentType, $segments[1]);
+        } catch (\LogicException $e) {
+            throw new \LogicException(\sprintf(
+                'The filter family "%s" of relation "%s" on type "%s" resolved the filter "%s" to the path "%s", which goes on from the pivot row to an entity no single registered type serves, so no type\'s read rules can apply to the rows it reaches. %s This is a declaration fault the cache warm-up refuses on a declared filter: register exactly one resource type for that entity, or resolve the family to a path that does not reach it.',
+                $family->key(),
+                $relation->name(),
+                $parentType,
+                $filter->key(),
+                $path,
+                $e->getMessage(),
+            ), 0, $e);
+        }
+
+        return $filter;
     }
 
     /**
@@ -485,6 +563,10 @@ final class RelationCriteriaFactory
      */
     private function columnOf(FilterInterface $filter): string
     {
+        if (self::readsPivotRow($filter) && $filter instanceof ReachesThrough) {
+            return self::PIVOT_PREFIX . \substr((string) $filter->throughRelations(), \strlen(RelationPath::PIVOT) + 1);
+        }
+
         return match (true) {
             $filter instanceof Where,
             $filter instanceof WhereIn,

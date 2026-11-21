@@ -13,12 +13,16 @@ use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Range;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\TraversesPath;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereGroup;
+use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereIdNotIn;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
@@ -32,10 +36,13 @@ use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
 use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApi\Resource\Through\ReachesThrough;
 use haddowg\JsonApiBundle\Action\ActionRegistry;
 use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
+use haddowg\JsonApiBundle\DataProvider\PivotRowRelationRouter;
 use haddowg\JsonApiBundle\DataProvider\RelatedReadRouter;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\DataProvider\ScopesRelatedReadsInterface;
@@ -379,7 +386,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     private function guardThroughPaths(string $serverName, string $type, AbstractResource $resource, ClassMetadata $metadata): void
     {
         $server = $this->servers->get($serverName);
-        $paths = FilterPaths::of($server, $resource);
+        $pivotRows = $this->providers !== null ? new PivotRowRelationRouter($this->providers) : null;
+        $paths = FilterPaths::of($server, $resource, pivotRows: $pivotRows);
         $this->guardThroughOf($type, null, [...$resource->allFilters(), ...$resource->allSorts(), ...\array_map(static fn(SortDirective $d): SortInterface => $d->sort, $resource->defaultSort())], $metadata, $paths);
 
         foreach ($resource->allFields() as $relation) {
@@ -393,7 +401,56 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             }
 
             $declared = [...$relation->allFilters(), ...$relation->sorts(), ...\array_map(static fn(SortDirective $d): SortInterface => $d->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])];
-            $this->guardThroughOf($type, $relation, $declared, $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type));
+            $this->guardThroughOf($type, $relation, $declared, $this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), FilterPaths::of($server, $related, $type, relation: $relation, pivotRows: $pivotRows));
+            if ($pivotRows !== null && $relation instanceof PivotRelationInterface) {
+                $this->guardDeprecatedPivotPaths($type, $relation, $relation->allFilters(), $pivotRows);
+            }
+        }
+    }
+
+    /**
+     * Refuses a deprecated `pivot.`-prefixed `WhereThrough`, `WhereThroughIn`, `WhereHas` or
+     * `WhereDoesntHave`, or a `pivot.`-prefixed {@see WhereHasMatching}, whose path goes on
+     * from the pivot row to an entity no registered
+     * type serves, or several do: no type's scope or gate could apply to the rows it
+     * reaches, as the `->through()` form already refuses.
+     *
+     * @param list<FilterInterface> $filters
+     */
+    private function guardDeprecatedPivotPaths(string $type, PivotRelationInterface $relation, array $filters, PivotRowRelations $pivotRows): void
+    {
+        foreach ($filters as $filter) {
+            if ($filter instanceof WhereGroup) {
+                $this->guardDeprecatedPivotPaths($type, $relation, $filter->children, $pivotRows);
+
+                continue;
+            }
+            $path = match (true) {
+                $filter instanceof WhereThrough, $filter instanceof WhereThroughIn => $filter->path,
+                $filter instanceof WhereHas, $filter instanceof WhereDoesntHave, $filter instanceof WhereHasMatching => $filter->relationship,
+                default => null,
+            };
+            $segments = $path !== null ? \explode('.', $path) : [];
+            if (\count($segments) < 2 || $segments[0] !== 'pivot') {
+                continue;
+            }
+
+            try {
+                $pivotRows->pivotRowRelation($relation, $type, $segments[1]);
+            } catch (\LogicException $e) {
+                // WhereHasMatching has no through() form to migrate to.
+                $matching = $filter instanceof WhereHasMatching;
+                throw new \LogicException(\sprintf(
+                    'The JSON:API resource for type "%s" declares the filter "%s" of relation "%s", whose %spath "%s" goes on from the pivot row to an entity no single registered type serves, so no type\'s read rules can apply to the rows it reaches. %s Register exactly one resource type for that entity%s.',
+                    $type,
+                    $filter->key(),
+                    $relation->name(),
+                    $matching ? '' : 'deprecated ',
+                    $path,
+                    $e->getMessage(),
+                    $matching ? '' : ', or migrate the filter to a ->through() path that does not reach it',
+                ), 0, $e);
+            }
         }
     }
 
@@ -434,7 +491,12 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
             ));
 
             $current = $metadata;
-            foreach ($path->hops as $hop) {
+            foreach ($path->hops as $index => $hop) {
+                if ($hop->pivot) {
+                    $current = $this->pivotRowMetadata($hop, $index === 0 && $path->startsWithPivot() ? null : $current, $refuse);
+
+                    continue;
+                }
                 $relatedType = $hop->relatedType();
                 if (!isset($this->entityClassByType[$relatedType])) {
                     throw $refuse(\sprintf('the relation "%s" reaches the type "%s", which no Doctrine entity maps.', $hop->relation->name(), $relatedType));
@@ -455,6 +517,37 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 throw $refuse(\sprintf('"%s" is not a field or association of %s.', $leafColumn, $current->getName()));
             }
         }
+    }
+
+    /**
+     * The association entity a `pivot` hop reaches: the pivot rows of a `BelongsToMany`
+     * with stored pivot fields, from `$from`, or from the relation's own parent when the
+     * path starts with `pivot`, where the provider's pivot query has joined them already.
+     * Any other relation's pivot rows are refused, and so are the pivot rows of a relation
+     * whose members a provider other than Doctrine scopes.
+     *
+     * @param ClassMetadata<object>|null                $from
+     * @param \Closure(string): \LogicException        $refuse
+     *
+     * @return ClassMetadata<object>
+     */
+    private function pivotRowMetadata(RelationHop $hop, ?ClassMetadata $from, \Closure $refuse): ClassMetadata
+    {
+        $relation = $hop->relation;
+        $relatedType = $hop->relatedType();
+        if (!$relation instanceof BelongsToMany || !$this->pivotAssociations->isPivotRelation($relation) || !isset($this->entityClassByType[$relatedType])) {
+            throw $refuse(\sprintf('the Doctrine provider reads the pivot rows of a BelongsToMany with stored pivot fields over an association entity, and "%s" is not one.', $relation->name()));
+        }
+        $parentClass = $from?->getName() ?? $this->entityClassByType[$hop->parentType] ?? null;
+        if ($parentClass === null) {
+            throw $refuse(\sprintf('the type "%s" that declares "%s" maps no Doctrine entity.', $hop->parentType, $relation->name()));
+        }
+        if ($from !== null && $this->scopesOutsideDoctrine($relatedType, $relation)) {
+            throw $refuse(\sprintf('the type "%s" is scoped by a provider other than Doctrine, whose scope a Doctrine query cannot apply to the members the pivot rows link.', $relatedType));
+        }
+
+        /** @var class-string $parentClass */
+        return $this->entityManager->getClassMetadata($this->pivotAssociations->discover($relation, $parentClass, $this->entityClassByType[$relatedType])->entityClass);
     }
 
     /**

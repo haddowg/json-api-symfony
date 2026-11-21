@@ -655,6 +655,15 @@ relations straight off the model, so it can't look an id up. A model that holds 
 where an object belongs fails the read with a `\LogicException` naming the type and the
 relation, rather than rendering an identifier with an empty `id`.
 
+Pivot paths need a store with pivot rows, and the in-memory store holds none. On a type it
+serves, a filter whose `->through()` path starts at `pivot` and reads a pivot field
+answers `400`, as a pivot column filter does. A path with `pivot` after a relation, such as
+`tracks.playlists.pivot`, answers `400` too, and so does a filter default declared on one,
+on every read that applies it. A path that goes on past `pivot`, such as
+`pivot.addedBy`, fails the cache warm-up, since nothing names the relations an in-memory
+pivot row would hold. A relation whose default order reaches through its pivot row fails
+the warm-up as well.
+
 ### The `$relatedResolver` requirement
 
 A persister with **no** `$relatedResolver` supports only whole-resource writes

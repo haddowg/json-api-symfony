@@ -27,6 +27,7 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
@@ -35,6 +36,7 @@ use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApi\Resource\Sort\SortDirective;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApi\Resource\Sort\SortMatcher;
+use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApiBundle\Action\ActionDescriptor;
 use haddowg\JsonApiBundle\DataProvider\AdmitsIdsInterface;
 use haddowg\JsonApiBundle\DataProvider\AdmitsRowsInterface;
@@ -104,7 +106,7 @@ use haddowg\JsonApiBundle\Server\IdEncoderResolver;
  * @implements DataProviderInterface<object>
  * @implements PivotAwareProviderInterface<object>
  */
-final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface, ScopesToParentsInterface, KeysCursorSortsInterface
+final class DoctrineDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, AdmitsRowsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsLinkRowsInterface, ReadsByForeignKeyInterface, ScopesToParentsInterface, KeysCursorSortsInterface, PivotRowRelations
 {
     /**
      * The root alias every generated QueryBuilder uses; handlers re-read it
@@ -139,6 +141,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     private readonly DoctrineTargetEncoders $targetEncoders;
 
+    private readonly DoctrinePivotRowRelations $pivotRows;
+
     /**
      * @param array<string, class-string>            $entityClassByType a `type → entity FQCN` map
      * @param IdEncoderResolver                      $idEncoders        resolves a type's id encoder (route `{id}` decode)
@@ -164,6 +168,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->targetEncoders = new DoctrineTargetEncoders($this->entityManager, $this->entityClassByType, $this->idEncoders);
+        $this->pivotRows = new DoctrinePivotRowRelations($this->entityManager, $this->entityClassByType, $this->pivotAssociations);
         $this->applier = new CriteriaApplier();
         $this->windowExecutor = new WindowExecutor();
         $this->filterHandler = new DoctrineFilterHandler(
@@ -1733,6 +1738,15 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
     // --- pivot (belongsToMany association-entity) collection -------------------
 
+    /**
+     * The relation a pivot row holds under `$member`: an association of the relation's
+     * association entity, reaching the type that serves its target entity.
+     */
+    public function pivotRowRelation(PivotRelationInterface $relation, string $parentType, string $member): ?RelationInterface
+    {
+        return $this->pivotRows->pivotRowRelation($relation, $parentType, $member);
+    }
+
     public function supportsPivot(string $relatedType, RelationInterface $relation): bool
     {
         return $this->pivotAssociations !== null
@@ -2494,7 +2508,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $columns = [];
         foreach ($directives as $directive) {
             $sort = $directive->sort;
-            if (!$sort instanceof SortByField || \str_contains($sort->column, '.')) {
+            // A sort reaching through relations joins them, which only the applier does.
+            if (!$sort instanceof SortByField || $sort->through !== null || \str_contains($sort->column, '.')) {
                 return null;
             }
 

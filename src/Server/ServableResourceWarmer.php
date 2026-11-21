@@ -25,6 +25,7 @@ use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\StoresIdentifiersInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\MetaContext;
 use haddowg\JsonApi\Resource\RequestMetaContext;
@@ -46,6 +47,7 @@ use haddowg\JsonApiBundle\DataProvider\DataProviderRegistry;
 use haddowg\JsonApiBundle\DataProvider\KeysCursorSortsInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
+use haddowg\JsonApiBundle\DataProvider\PivotRowRelationRouter;
 use haddowg\JsonApiBundle\DataProvider\ReadsByForeignKeyInterface;
 use haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory;
 use haddowg\JsonApiBundle\OpenApi\Metadata\ActionMetadata;
@@ -378,7 +380,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * {@see RelationOrderValidator}, and that a key only a `belongsToMany` pivot field
      * answers is read by a provider that sorts its pivot rows. An identified
      * `MorphToMany` sorts its link rows on every provider. The in-memory provider holds no pivot
-     * data, so a pivot order would otherwise fail every read of the relation. Each foreign
+     * data, so a pivot order would otherwise fail every read of the relation, and an order
+     * that reaches through the pivot row would be dropped from every read. Each foreign
      * key is checked here too, through core's {@see RelationForeignKeyValidator}, beside
      * the provider that reads through it.
      */
@@ -427,7 +430,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
         foreach ($serializer->allFields() as $relation) {
             $order = $relation instanceof BelongsToMany ? RelationSorts::ownDefault($relation) : [];
-            if ($order === [] || PivotFields::sortsFor($relation) === []) {
+            $readsPivotRow = \array_filter($order, static fn(SortDirective $directive): bool => RelationCriteriaFactory::readsPivotRow($directive->sort)) !== [];
+            if ($order === [] || (PivotFields::sortsFor($relation) === [] && !$readsPivotRow)) {
                 continue;
             }
 
@@ -443,6 +447,17 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
             $vocabulary = SortMatcher::merge($this->typeMetadata->resourceFor($server, $relatedType)?->allSorts() ?? [], $relation->sorts());
             foreach ($order as $directive) {
+                if (RelationCriteriaFactory::readsPivotRow($directive->sort)) {
+                    throw new \LogicException(\sprintf(
+                        'Relation "%s" on resource type "%s" is ordered by "%s", which reaches through its pivot row, but the data provider of "%s" does not read the relation through a pivot query, so it cannot read a pivot row. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
+                        $relation->name(),
+                        $type,
+                        $directive->sort->key(),
+                        $relatedType,
+                        $relatedType,
+                        $relatedType,
+                    ));
+                }
                 if (!SortMatcher::recognises($vocabulary, $directive->sort->key())) {
                     throw new \LogicException(\sprintf(
                         'Relation "%s" on resource type "%s" is ordered by the pivot field "%s", but the data provider of "%s" does not read the relation through a pivot query, so it cannot order by a pivot field. Order it by a field of "%s", or serve "%s" from a provider that reads pivot rows.',
@@ -595,9 +610,9 @@ final class ServableResourceWarmer implements CacheWarmerInterface
             return;
         }
 
-        $paths = ThroughPathResolver::forResolver($server);
+        $paths = ThroughPathResolver::forResolver($server, new PivotRowRelationRouter($this->providers));
         try {
-            $paths->resolveAll($resource->allFilters(), $resource->allFields());
+            $paths->resolveAll($resource->allFilters(), $resource->allFields(), null, $type);
             foreach ($resource->allFields() as $relation) {
                 if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
                     continue;
@@ -606,7 +621,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
                 if ($related !== null) {
                     self::guardPivotRowFilters($relation, $related);
-                    $paths->resolveAll($relation->allFilters(), $related->allFields());
+                    $paths->resolveAll($relation->allFilters(), $related->allFields(), new RelationHop($relation, $type, $relation->column() ?? $relation->name()), $related::$type);
                 }
             }
         } catch (\LogicException $e) {
@@ -614,7 +629,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
         }
 
         try {
-            self::resolveSorts($paths, [...$resource->allSorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $resource->defaultSort())], $resource->allFields());
+            self::resolveSorts($paths, [...$resource->allSorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $resource->defaultSort())], $resource->allFields(), null, $type);
             foreach ($resource->allFields() as $relation) {
                 if (!$relation instanceof RelationInterface || \count($relation->relatedTypes()) !== 1) {
                     continue;
@@ -622,7 +637,7 @@ final class ServableResourceWarmer implements CacheWarmerInterface
 
                 $related = $this->typeMetadata->resourceFor($server, $relation->relatedTypes()[0]);
                 if ($related !== null) {
-                    self::resolveSorts($paths, [...$relation->sorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])], $related->allFields());
+                    self::resolveSorts($paths, [...$relation->sorts(), ...\array_map(static fn(SortDirective $directive): SortInterface => $directive->sort, $relation instanceof DefaultSortedRelationInterface ? $relation->defaultSort() : [])], $related->allFields(), new RelationHop($relation, $type, $relation->column() ?? $relation->name()), $related::$type);
                 }
             }
         } catch (\LogicException $e) {
@@ -638,10 +653,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * @param list<SortInterface>      $sorts
      * @param iterable<FieldInterface> $fields
      */
-    private static function resolveSorts(ThroughPathResolver $paths, array $sorts, iterable $fields): void
+    private static function resolveSorts(ThroughPathResolver $paths, array $sorts, iterable $fields, ?RelationHop $under = null, string $type = ''): void
     {
         foreach ($sorts as $sort) {
-            $paths->resolveSort($sort, $fields);
+            $paths->resolveSort($sort, $fields, $under, $type);
         }
     }
 

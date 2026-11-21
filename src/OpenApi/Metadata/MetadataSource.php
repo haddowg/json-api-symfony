@@ -193,6 +193,7 @@ final class MetadataSource
             scopeCatalog: $this->scopeCatalog?->all() ?? [],
             security: $this->securityFor(static fn(): string => $serverName, $types),
             refusesThrough: $this->refusesThroughFor(static fn(): string => $serverName),
+            pivotRows: $this->relatedReads()?->pivotRows(),
             strictQueryParameters: $server->strictQueryParameters(),
             validatesRequestDocuments: $this->validatesRequestDocuments,
             maxIncludeDepth: $server->maxIncludeDepth(),
@@ -327,6 +328,7 @@ final class MetadataSource
             // The one atomic endpoint the document lists is the default server's.
             security: $this->securityFor(static fn(?string $type): string => $serverOfType[$type ?? ''] ?? ServerProvider::DEFAULT_SERVER, $types),
             refusesThrough: $this->refusesThroughFor(static fn(?string $type): string => $serverOfType[$type ?? ''] ?? ServerProvider::DEFAULT_SERVER),
+            pivotRows: $this->relatedReads()?->pivotRows(),
             strictQueryParameters: $strict,
             validatesRequestDocuments: $this->validatesRequestDocuments,
             maxIncludeDepth: $maxIncludeDepth,

@@ -14,6 +14,7 @@ use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\Filter\ThroughReadAccess;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\Sort\SortInterface;
+use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
 /**
@@ -39,6 +40,7 @@ final readonly class FilterPaths
      * @param list<string>                                                                        $named      the types a filter's path may name, see {@see named()}
      * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission the rows a provider's scope admits of those a relation reached, see {@see admit()}
      * @param list<RelationInterface>                                                             $refused    the relations through which the filter being applied matches no row
+     * @param RelationHop|null                                                                    $under      the relation the filters run under, on a relation's reads
      * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission the storage keys of a type a polymorphic relation stores that its provider admits, see {@see admitMorphTargets()}
      */
     public function __construct(
@@ -51,6 +53,7 @@ final readonly class FilterPaths
         private ?\Closure $admission = null,
         private ?JsonApiRequestInterface $request = null,
         private array $refused = [],
+        private ?RelationHop $under = null,
         private ?\Closure $morphAdmission = null,
     ) {}
 
@@ -58,19 +61,23 @@ final readonly class FilterPaths
      * The paths of filters running against `$resource`'s type, read over the types
      * `$resources` registers, or `null` when there is no resource and so no inventory.
      * `$admission` narrows the rows an in-memory walk reaches through a relation to those
-     * the related type's provider admits, and `$morphAdmission` the targets a `WhereMorph`
-     * matches to those the target type's provider admits.
+     * the related type's provider admits. `$relation`, declared on `$parentType`, is the
+     * relation the filters run under on its reads, and `$pivotRows` names the relations a
+     * pivot row holds. `$morphAdmission` narrows the targets a `WhereMorph` matches to
+     * those the target type's provider admits.
      *
      * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission
      * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission
      */
-    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null, ?\Closure $morphAdmission = null): ?self
+    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null, ?RelationInterface $relation = null, ?PivotRowRelations $pivotRows = null, ?\Closure $morphAdmission = null): ?self
     {
         if ($resource === null) {
             return null;
         }
 
-        return new self(ThroughPathResolver::forResolver($resources), $resource->allFields(), static function (string $type) use ($resources): ?array {
+        $under = $relation !== null && $parentType !== null ? new RelationHop($relation, $parentType, $relation->column() ?? $relation->name()) : null;
+
+        return new self(ThroughPathResolver::forResolver($resources, $pivotRows), $resource->allFields(), static function (string $type) use ($resources): ?array {
             if (!$resources->hasSerializerFor($type)) {
                 return null;
             }
@@ -78,7 +85,16 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources), $admission, morphAdmission: $morphAdmission);
+        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources, $pivotRows), $admission, under: $under, morphAdmission: $morphAdmission);
+    }
+
+    /**
+     * The relation the filters run under, as the type declaring it holds it, on a
+     * relation's reads.
+     */
+    public function under(): ?RelationHop
+    {
+        return $this->under;
     }
 
     /**
@@ -89,7 +105,7 @@ final readonly class FilterPaths
      */
     public function scoped(?JsonApiRequestInterface $request, array $refused = []): self
     {
-        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->morphAdmission);
+        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->under, $this->morphAdmission);
     }
 
     /**
@@ -117,7 +133,7 @@ final readonly class FilterPaths
             return $this->access->hopsAlong($filter->relationship, $this->fields, $this->type);
         }
 
-        return $this->access->hopsOf($filter, $this->fields, $this->type);
+        return $this->access->hopsOf($filter, $this->fields, $this->type, $this->under);
     }
 
     /**
@@ -133,7 +149,7 @@ final readonly class FilterPaths
             return $this->hopsOf($filter);
         }
 
-        return $this->access->hopsOfRequested($filter, $value, $this->fields, $this->type);
+        return $this->access->hopsOfRequested($filter, $value, $this->fields, $this->type, $this->under);
     }
 
     /**
@@ -258,9 +274,29 @@ final readonly class FilterPaths
      */
     public function relationsAlong(string $path): array
     {
-        $resolver = $this->fieldsOf !== null ? new ThroughPathResolver($this->fieldsOf) : $this->resolver;
+        $resolver = $this->fieldsOf !== null ? new ThroughPathResolver($this->fieldsOf, $this->resolver->pivotRows()) : $this->resolver;
 
         return \array_map(static fn(array $stored): RelationInterface => $stored[0], $resolver->relationsAlong($path, $this->fields));
+    }
+
+    /**
+     * The relation each segment after the leading `pivot` of a deprecated traversal's
+     * storage path walks, from the pivot row of the relation the filters run under, as
+     * core's {@see ThroughPathResolver::pivotRelationsAlong()} names them, so each hop gets
+     * its reached type's scope. Empty off a relation's reads, and short where a segment
+     * names no relation or reaches an entity no single registered type serves.
+     *
+     * @return list<RelationInterface>
+     */
+    public function pivotRelationsAlong(string $path): array
+    {
+        if ($this->under === null) {
+            return [];
+        }
+
+        $resolver = $this->fieldsOf !== null ? new ThroughPathResolver($this->fieldsOf, $this->resolver->pivotRows()) : $this->resolver;
+
+        return \array_map(static fn(array $stored): RelationInterface => $stored[0], $resolver->pivotRelationsAlong($path, $this->under));
     }
 
     /**
@@ -268,7 +304,7 @@ final readonly class FilterPaths
      */
     public function resolve(FilterInterface $filter): FilterInterface
     {
-        return $this->resolver->resolve($filter, $this->fields);
+        return $this->resolver->resolve($filter, $this->fields, $this->under, $this->type ?? '');
     }
 
     /**
@@ -278,7 +314,7 @@ final readonly class FilterPaths
      */
     public function resolveSort(SortInterface $sort): SortInterface
     {
-        return $this->resolver->resolveSort($sort, $this->fields);
+        return $this->resolver->resolveSort($sort, $this->fields, $this->under, $this->type ?? '');
     }
 
     /**
@@ -289,7 +325,7 @@ final readonly class FilterPaths
      */
     public function hopsOfSort(SortInterface $sort): array
     {
-        return $this->access === null || $this->type === null ? [] : $this->access->hopsOfSort($sort, $this->fields, $this->type);
+        return $this->access === null || $this->type === null ? [] : $this->access->hopsOfSort($sort, $this->fields, $this->type, $this->under);
     }
 
     /**

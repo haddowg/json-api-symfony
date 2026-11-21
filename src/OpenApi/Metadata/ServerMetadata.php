@@ -27,7 +27,10 @@ use haddowg\JsonApi\OpenApi\SecurityRequirement;
 use haddowg\JsonApi\OpenApi\SecurityScheme;
 use haddowg\JsonApi\OpenApi\Server;
 use haddowg\JsonApi\OpenApi\Tag;
+use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\RelationHop;
+use haddowg\JsonApi\Resource\Through\PivotRowRelations;
 use haddowg\JsonApi\Scope\ScopeTable;
 
 /**
@@ -61,7 +64,7 @@ use haddowg\JsonApi\Scope\ScopeTable;
  * layer can refuse ({@see DeclaresOperationSecurity}), whether query parameters are
  * strict, which documents are checked, and the default include depth.
  */
-final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed, DeclaresOperationSecurity, DeclaresThroughReadSecurity, DeclaresStrictQueryParameters, DeclaresDocumentValidation, DeclaresMaxIncludeDepth
+final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLinkObjects, DeclaresReadOnlyAttributeRejection, DeclaresExampleGeneration, DeclaresOperationScopeTable, DeclaresMethodNotAllowed, DeclaresOperationSecurity, DeclaresThroughReadSecurity, DeclaresStrictQueryParameters, DeclaresDocumentValidation, DeclaresMaxIncludeDepth, PivotRowRelations
 {
     /**
      * @param list<Server>                      $servers
@@ -75,6 +78,7 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
      * @param array<string, string>             $scopeCatalog every scope the app defines, with its description
      * @param (\Closure(?TypeMetadataInterface, OperationKey, bool): bool)|null $security answers whether the security layer can refuse an operation, with `ACCESS_DENIED` when the bool is true and `AUTHENTICATION_REQUIRED` otherwise; null answers yes
      * @param (\Closure(RelationHop): bool)|null                              $refusesThrough answers whether some caller can be refused a filter that reaches through a hop; null answers no
+     * @param PivotRowRelations|null                                        $pivotRows      the relations pivot rows hold, as the providers name them
      */
     public function __construct(
         private string $title,
@@ -105,7 +109,13 @@ final readonly class ServerMetadata implements ContributesErrorCodes, DeclaresLi
         private bool $checksResourceObjectMembers = true,
         private ?int $maxIncludeDepth = null,
         private ?\Closure $refusesThrough = null,
+        private ?PivotRowRelations $pivotRows = null,
     ) {}
+
+    public function pivotRowRelation(PivotRelationInterface $relation, string $parentType, string $member): ?RelationInterface
+    {
+        return $this->pivotRows?->pivotRowRelation($relation, $parentType, $member);
+    }
 
     public function canRefuseThrough(RelationHop $hop): bool
     {

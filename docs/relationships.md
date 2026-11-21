@@ -508,8 +508,10 @@ Each key must name a sort the relation accepts: one of the related type's sorts,
 `withSorts()` sort or, on a pivot `belongsToMany`, a pivot field. A pivot key orders
 by the pivot field's stored column on every path, include batching included. The
 container warm-up checks the keys, so a typo fails `cache:clear` rather than every
-read. It also refuses a pivot key on a relation whose related type is served by a
-provider that doesn't read pivot rows, such as the in-memory provider. The OpenAPI
+read. It also refuses a pivot key, or a sort that reaches through the pivot row such as
+`SortByField::make('added', 'addedAt')->through('pivot')`, on a relation whose related type
+is served by a provider that doesn't read pivot rows, such as the in-memory provider, and
+names the relation and the sort. The OpenAPI
 document states the relation's own order as the `default` of the `sort` parameter on
 its relationship and related endpoints; the related type's default isn't the
 relation's, so it isn't stated there.
@@ -992,11 +994,41 @@ A related type that declares a relation stored as `pivot` would make such a path
 ambiguous, so the cache warm-up fails naming the filter and the relation. Store that
 relation under another name with `storedAs()`.
 
+`WhereThrough` and `WhereThroughIn` are deprecated. Their `pivot.`-prefixed paths move to
+[`->through()`](https://github.com/haddowg/json-api/blob/main/docs/filters.md#reaching-a-pivot-row)
+with a leading `pivot` segment, and the existence filters move with them:
+
+```php
+->withFilters(
+    WhereDoesntHave::make('unused', 'targets')->through('pivot'),
+    Where::make('targetName', 'name')->through('pivot.targets'),
+    WhereIdIn::make('target')->through('pivot.targets')->acceptsList(),
+    Where::make('override', 'defaultOverride')->through('pivot'),  // a pivot field
+)
+```
+
+The migrated filters apply on the same endpoints. Each association the path walks
+reaches a type: the registered type whose entity it targets, whose query extensions scope
+it, whose read rules gate it and whose encoder decodes its ids. The deprecated
+`pivot.`-prefixed forms reach the same types, so before and after migrating a filter
+hides the same rows and answers the same `403` to a caller who may not read a hop.
+The row's associations back to the parent and to the member reach the parent type and the
+relation's related type, even when another type serves the same entity. Every other
+association past `pivot` needs exactly one registered type for the entity it targets, in
+both forms. An entity no type serves, or several serve, has no type whose rules could apply,
+so a filter reaching it fails the cache warm-up in either form, naming the filter and its
+path. A `pivot.`-prefixed `WhereHasMatching` reaching one fails it too. Register one type for that entity, or move the filter to a `->through()` path that
+doesn't reach it.
+
 A [filter family](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-families-keys-matched-by-prefix)
 on the relation can resolve to a pivot filter too. The bundle resolves the family first
 and then treats what it returns as it treats an exact pivot filter: a `pivot.` column
 routes to the pivot alias and gets the field's cast wherever pivot filters apply, and
-where they don't its key is unrecognised just as the exact one is.
+where they don't its key is unrecognised just as the exact one is. The warm-up can't see the
+paths a family resolves, so a `pivot.`-prefixed path a family returns that reaches an entity
+no single registered type serves is refused when the request resolves it. The request answers
+`500` and the error log names the family, the filter and the path, since the declaration
+is at fault rather than the request.
 
 Pivot filters apply wherever the Doctrine provider reads the relation through its pivot
 query: the related and relationship endpoints, a Relationship Queries
