@@ -1,0 +1,3 @@
+# A WhereMorph is scoped and gated by the type it names
+
+A `WhereMorph` compares only a stored type and id, so it could tell a caller whether a row points at a target that caller can't read. The gate is asked about the requested type alone, so a relation over a readable and an unreadable type still filters by the readable one, and the target's scope is applied to the stored ids: on Doctrine the requested type's query extensions narrow them in the same statement, and in memory the type's provider admits them through the same id probe a polymorphic related read uses. A target type served by an entity this Doctrine provider doesn't map is compared as stored, since no extension of this provider can scope it.

@@ -180,7 +180,10 @@ return static function (ContainerConfigurator $container): void {
         ->arg('$filterValues', \Symfony\Component\DependencyInjection\Loader\Configurator\service(FilterValueValidator::class)->nullOnInvalid())
         ->arg('$txContext', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\WriteTransactionContext::class))
         ->arg('$afterCommit', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataPersister\AfterCommit::class))
-        ->arg('$requestMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class));
+        ->arg('$requestMeta', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Operation\RequestMetaResolver::class))
+        // Narrows the rows an action filter's in-memory walk reaches through a relation to
+        // those the related type's provider admits.
+        ->arg('$readRouter', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class));
 
     // Exposes an #[AsJsonApiAction(asLink: true)] action, or one a resource links through
     // a declared ActionLink, as a security-aware `links` member on its mount type's
@@ -212,7 +215,8 @@ return static function (ContainerConfigurator $container): void {
     // related-collection endpoint (the handler) and its include/linkage windowing
     // twin (RelationshipWindowBatcher), so the logic lives once.
     // Autowired into both.
-    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory::class);
+    $services->set(\haddowg\JsonApiBundle\DataProvider\RelationCriteriaFactory::class)
+        ->arg('$readRouter', \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\RelatedReadRouter::class));
 
     // The validator argument is optional: it resolves to the ResourceValidator
     // only when the Symfony Validator bridge is wired (below), else null. The

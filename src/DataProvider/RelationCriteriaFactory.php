@@ -65,6 +65,13 @@ final class RelationCriteriaFactory
     private const string PIVOT_PREFIX = 'pivot.';
 
     /**
+     * @param RelatedReadRouter|null $readRouter narrows the rows an in-memory filter walk reaches through a relation to those its provider admits
+     */
+    public function __construct(
+        private readonly ?RelatedReadRouter $readRouter = null,
+    ) {}
+
+    /**
      * The per-relation paginator for a related to-many collection: the relation's
      * own paginator, else the related resource's, else the server default — the
      * 3-tier chain both the related endpoint and the windowing batcher resolve
@@ -199,7 +206,7 @@ final class RelationCriteriaFactory
             // RelationCountInterface seam).
             wantsCount: $wantsCount,
             request: $request,
-            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType) : null,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 
@@ -209,9 +216,11 @@ final class RelationCriteriaFactory
      * related endpoint folds in, the relation's default read order and the sort
      * vocabulary it is checked against. The members are then the ones the relation's
      * endpoints serve, in the order they serve them. `$pivotSorts` is whether the
-     * provider reads the relation through its pivot query.
+     * provider reads the relation through its pivot query. `$resources` resolves a filter
+     * default's path against the related type, so it applies the related types' scopes
+     * along it as the related endpoint does.
      */
-    public function linkageFor(?AbstractResource $relatedResource, RelationInterface $relation, JsonApiRequestInterface $request, bool $pivotSorts = false): CollectionCriteria
+    public function linkageFor(?AbstractResource $relatedResource, RelationInterface $relation, JsonApiRequestInterface $request, bool $pivotSorts = false, ?SerializerResolverInterface $resources = null, ?string $parentType = null): CollectionCriteria
     {
         return new CollectionCriteria(
             new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: $request->getPagination()),
@@ -220,6 +229,7 @@ final class RelationCriteriaFactory
             defaultSort: $this->defaultOrder($relation, $relatedResource, $pivotSorts),
             aliasOf: $pivotSorts ? $this->pivotSortAliases($relation) : [],
             request: $request,
+            paths: $resources !== null ? FilterPaths::of($resources, $relatedResource, $parentType, $this->readRouter?->admissionFor($resources), $this->readRouter?->morphAdmissionFor($resources)) : null,
         );
     }
 

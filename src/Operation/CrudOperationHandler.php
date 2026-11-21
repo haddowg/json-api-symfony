@@ -580,7 +580,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $resource = $this->types->resourceFor($server, $type);
 
         $filters = $resource?->allFilters() ?? [];
-        $paths = FilterPaths::of($server, $resource);
+        $paths = FilterPaths::of($server, $resource, admission: $this->readRouter?->admissionFor($server), morphAdmission: $this->readRouter?->morphAdmissionFor($server));
 
         // Validate each client-supplied filter value against the declared value
         // constraints before the filter reaches the provider, so a mistyped value

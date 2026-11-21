@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
+use haddowg\JsonApi\Resource\Filter\ThroughReadAccess;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
 /**
  * Resolves a traversal filter's path against the type its filters run against, through
@@ -18,14 +22,23 @@ use haddowg\JsonApi\Resource\SerializerResolverInterface;
  * value validator resolve each filter after matching the requested key, so a filter
  * family's filter resolves per request, and a path ending on a relationship compares
  * the related resource's id.
+ *
+ * They also carry what the caller may read through each relation a filter reaches
+ * through: {@see hopsOf()} and {@see refusedHops()} decide which filters the caller may
+ * not use, {@see relationAt()} names the relation a hop of a dotted path walks so a data
+ * layer can apply the related type's scope to it, and {@see refuses()} tells it that a
+ * hop admits no row at all.
  */
 final readonly class FilterPaths
 {
     /**
-     * @param list<FieldInterface>                                     $fields   the inventory of the type the filters run against
-     * @param (\Closure(string): (iterable<FieldInterface>|null))|null $fieldsOf a related type's inventory, or `null` when the type has none
-     * @param string|null                                              $type     the type the filters run against
-     * @param list<string>                                             $named    the types a filter's path may name, see {@see named()}
+     * @param list<FieldInterface>                                                                $fields     the inventory of the type the filters run against
+     * @param (\Closure(string): (iterable<FieldInterface>|null))|null                            $fieldsOf   a related type's inventory, or `null` when the type has none
+     * @param string|null                                                                         $type       the type the filters run against
+     * @param list<string>                                                                        $named      the types a filter's path may name, see {@see named()}
+     * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission the rows a provider's scope admits of those a relation reached, see {@see admit()}
+     * @param list<RelationInterface>                                                             $refused    the relations through which the filter being applied matches no row
+     * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission the storage keys of a type a polymorphic relation stores that its provider admits, see {@see admitMorphTargets()}
      */
     public function __construct(
         private ThroughPathResolver $resolver,
@@ -33,13 +46,24 @@ final readonly class FilterPaths
         private ?\Closure $fieldsOf = null,
         private ?string $type = null,
         private array $named = [],
+        private ?ThroughReadAccess $access = null,
+        private ?\Closure $admission = null,
+        private ?JsonApiRequestInterface $request = null,
+        private array $refused = [],
+        private ?\Closure $morphAdmission = null,
     ) {}
 
     /**
      * The paths of filters running against `$resource`'s type, read over the types
      * `$resources` registers, or `null` when there is no resource and so no inventory.
+     * `$admission` narrows the rows an in-memory walk reaches through a relation to those
+     * the related type's provider admits, and `$morphAdmission` the targets a `WhereMorph`
+     * matches to those the target type's provider admits.
+     *
+     * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission
+     * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission
      */
-    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null): ?self
+    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null, ?\Closure $morphAdmission = null): ?self
     {
         if ($resource === null) {
             return null;
@@ -53,7 +77,130 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        }, $resource::$type, self::namedBy($resource, $parentType));
+        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources), $admission, morphAdmission: $morphAdmission);
+    }
+
+    /**
+     * A copy for the filter about to run for `$request`, through whose `$refused`
+     * relations it matches no row.
+     *
+     * @param list<RelationInterface> $refused
+     */
+    public function scoped(?JsonApiRequestInterface $request, array $refused = []): self
+    {
+        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->morphAdmission);
+    }
+
+    /**
+     * The request the filter being applied runs for, whose caller the related types'
+     * scopes narrow to, or null outside one.
+     */
+    public function request(): ?JsonApiRequestInterface
+    {
+        return $this->request;
+    }
+
+    /**
+     * The relations `$filter` reaches through, as {@see ThroughReadAccess::hopsOf()} lists
+     * them, and the relation of a {@see WhereHasMatching}.
+     *
+     * @return list<RelationHop>
+     */
+    public function hopsOf(FilterInterface $filter): array
+    {
+        if ($this->access === null || $this->type === null) {
+            return [];
+        }
+
+        if ($filter instanceof WhereHasMatching) {
+            return $this->access->hopsAlong($filter->relationship, $this->fields, $this->type);
+        }
+
+        return $this->access->hopsOf($filter, $this->fields, $this->type);
+    }
+
+    /**
+     * The relations `$filter` reaches through for the requested `$value`, as
+     * {@see ThroughReadAccess::hopsOfRequested()} lists them: a `WhereMorph` reaches only
+     * the type the value names.
+     *
+     * @return list<RelationHop>
+     */
+    public function hopsOfRequested(FilterInterface $filter, mixed $value): array
+    {
+        if ($this->access === null || $this->type === null || $filter instanceof WhereHasMatching) {
+            return $this->hopsOf($filter);
+        }
+
+        return $this->access->hopsOfRequested($filter, $value, $this->fields, $this->type);
+    }
+
+    /**
+     * The hops of `$hops` the caller may not read through, asked of the server's gate.
+     *
+     * @param list<RelationHop> $hops
+     *
+     * @return list<RelationHop>
+     */
+    public function refusedHops(array $hops, JsonApiRequestInterface $request): array
+    {
+        return $hops === [] || $this->access === null ? [] : $this->access->refused($hops, $request);
+    }
+
+    /**
+     * Whether the filter being applied matches no row through `$relation`.
+     */
+    public function refuses(RelationInterface $relation): bool
+    {
+        return \in_array($relation, $this->refused, true);
+    }
+
+    /**
+     * The relation the last segment of the dotted storage path `$path` walks, or null
+     * when that segment is no relation.
+     */
+    public function relationAt(string $path): ?RelationInterface
+    {
+        $relations = $this->relationsAlong($path);
+
+        return \count($relations) === \count(\explode('.', $path)) ? $relations[\count($relations) - 1] : null;
+    }
+
+    /**
+     * The rows of `$rows`, reached through `$relation`, that the related type's provider
+     * admits for the caller: none through a refused relation, and all of them when no
+     * provider narrows them or there is no request to narrow for.
+     *
+     * @param list<object> $rows
+     *
+     * @return list<object>
+     */
+    public function admit(RelationInterface $relation, array $rows): array
+    {
+        if ($this->refuses($relation)) {
+            return [];
+        }
+
+        return $this->admission === null || $this->request === null ? $rows : ($this->admission)($relation, $rows, $this->request);
+    }
+
+    /**
+     * The storage keys among `$keys`, targets of `$type` stored by the polymorphic
+     * `$relation`, that the type's provider admits for the caller: none through a refused
+     * relation, and all of them when no provider narrows them or there is no request to
+     * narrow for.
+     *
+     * @param list<mixed> $keys
+     *
+     * @return list<mixed>
+     */
+    public function admitMorphTargets(RelationInterface $relation, string $type, array $keys): array
+    {
+        if ($this->refuses($relation)) {
+            return [];
+        }
+
+        return $this->morphAdmission === null || $this->request === null ? $keys : ($this->morphAdmission)($relation, $type, $keys, $this->request);
     }
 
     /**
@@ -101,40 +248,18 @@ final readonly class FilterPaths
 
     /**
      * The declared relation each leading segment of a dotted storage path walks, from the
-     * type the filters run against: the relation whose `column()` is the segment, then
-     * the next segment on that relation's related type. The list stops at the first
-     * segment that is not a monomorphic relation, so a path ending on a field has one
-     * entry fewer than it has segments.
+     * type the filters run against: the relation stored under the segment, the one named
+     * after it when several share it, then the next segment on that relation's related
+     * type. The list stops at the first segment that is not a monomorphic relation, so a
+     * path ending on a field has one entry fewer than it has segments.
      *
      * @return list<RelationInterface>
      */
     public function relationsAlong(string $path): array
     {
-        $relations = [];
-        $fields = $this->fields;
-        foreach (\explode('.', $path) as $segment) {
-            $relation = null;
-            foreach ($fields as $field) {
-                if ($field instanceof RelationInterface && $field->column() === $segment) {
-                    $relation = $field;
+        $resolver = $this->fieldsOf !== null ? new ThroughPathResolver($this->fieldsOf) : $this->resolver;
 
-                    break;
-                }
-            }
-            if ($relation === null) {
-                break;
-            }
-
-            $relations[] = $relation;
-            $related = $relation->relatedTypes();
-            $next = \count($related) === 1 && $this->fieldsOf !== null ? ($this->fieldsOf)($related[0]) : null;
-            if ($next === null) {
-                break;
-            }
-            $fields = \is_array($next) ? \array_values($next) : \iterator_to_array($next, false);
-        }
-
-        return $relations;
+        return \array_map(static fn(array $stored): RelationInterface => $stored[0], $resolver->relationsAlong($path, $this->fields));
     }
 
     /**

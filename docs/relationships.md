@@ -808,6 +808,10 @@ compared in a query.
 It works wherever a filter key does: a related endpoint, `relatedQuery[<path>][filter]`
 and a collection action's filters.
 
+It follows the [read rules of a filter through a relation](authorization.md#filters-that-reach-through-a-relation)
+for the type a request names: a target that type's scope hides never matches, and a type
+the caller may not read through the relation answers `403`.
+
 ### `WhereHasMatching` — the Doctrine escape hatch (not portable)
 
 When the inner predicate is more than a single column comparison — a multi-column /

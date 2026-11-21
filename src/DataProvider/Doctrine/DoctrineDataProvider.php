@@ -169,6 +169,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 ? $this->pivotAssociations->discover($relation, $ownerClass, $this->entityClassByType[$relation->relatedTypes()[0]])
                 : null,
             fn(string $class, array $named): ?IdEncoderInterface => $this->targetEncoders->encoderFor($class, $named),
+            $this->extensionsFor(...),
+            fn(string $type): ?string => $this->entityClassByType[$type] ?? null,
         );
         $this->sortHandler = new DoctrineSortHandler($sortArms);
         $this->ids = new DoctrineIdentifiers($this->entityManager);

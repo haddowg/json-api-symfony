@@ -8,6 +8,8 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 use Symfony\Component\ExpressionLanguage\Expression;
+use Symfony\Component\ExpressionLanguage\Lexer;
+use Symfony\Component\ExpressionLanguage\Token;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
@@ -54,6 +56,11 @@ final class ReadableRows
      */
     private \WeakMap $permissions;
 
+    /**
+     * @var array<string, bool>
+     */
+    private array $subjectless = [];
+
     public function __construct(
         private readonly ?AuthorizationCheckerInterface $authorizationChecker,
         private readonly ResourceSecurityRegistry $registry,
@@ -81,6 +88,7 @@ final class ReadableRows
         $this->memo = new \WeakMap();
         $this->permissions = new \WeakMap();
         $this->collections = [];
+        $this->subjectless = [];
     }
 
     /**
@@ -149,12 +157,15 @@ final class ReadableRows
 
     /**
      * The first type `$relation` relates to whose collection read gate refuses the
-     * caller, or `null` when every one admits them.
+     * caller, or `null` when every one admits them. `$types` narrows the types asked
+     * about, as a polymorphic hop naming one target does.
+     *
+     * @param list<string>|null $types
      */
-    public function refusedCollectionType(RelationInterface $relation, ?string $serverName = null): ?string
+    public function refusedCollectionType(RelationInterface $relation, ?string $serverName = null, ?array $types = null): ?string
     {
         $serverName ??= $this->serverName;
-        foreach ($relation->relatedTypes() as $type) {
+        foreach ($types ?? $relation->relatedTypes() as $type) {
             $expression = $this->registry->securityFor($type, $serverName)?->forList();
             if (!\is_string($expression)) {
                 continue;
@@ -168,6 +179,83 @@ final class ReadableRows
         }
 
         return null;
+    }
+
+    /**
+     * Whether a filter or sort that reaches through `$relation` is refused, because the
+     * caller may not read what it holds for every parent at once. There is no row to
+     * decide against, so only the rules that don't read one decide:
+     *
+     *  - a read permission the relation declares replaces the related types' gates, as it
+     *    does at the relation's endpoints. A bool one allows, a string one that never
+     *    reads `object` or `subject` is evaluated without a subject, and one that does is
+     *    refused, since no single answer holds for every parent;
+     *  - otherwise each related type's collection read gate, the check `GET /{type}`
+     *    makes, and its single-row read gate when that never reads the row, refuse it.
+     *
+     * A read gate that reads the row is left to the type's query scope, as it is on the
+     * type's own collection. `$types` narrows the related types asked about, as a
+     * polymorphic hop naming one target does.
+     *
+     * @param list<string>|null $types
+     */
+    public function refusesThrough(RelationInterface $relation, ?string $serverName = null, ?array $types = null): bool
+    {
+        $serverName ??= $this->serverName;
+        $read = $relation->securityRead();
+        if (\is_bool($read)) {
+            return false;
+        }
+        if (\is_string($read)) {
+            return self::readsSubject($read) || !$this->granted($read);
+        }
+
+        if ($this->refusedCollectionType($relation, $serverName, $types) !== null) {
+            return true;
+        }
+
+        foreach ($types ?? $relation->relatedTypes() as $type) {
+            $expression = $this->registry->securityFor($type, $serverName)?->forRead();
+            if (\is_string($expression) && !self::readsSubject($expression) && !$this->granted($expression)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether `$expression` reads the subject it is evaluated against, through the
+     * `object` or `subject` variable.
+     */
+    public static function readsSubject(string $expression): bool
+    {
+        // Without the component the expression can't be evaluated either, and granted() says why.
+        if (!\class_exists(Lexer::class)) {
+            return false;
+        }
+
+        $stream = (new Lexer())->tokenize($expression);
+        $previous = null;
+        while (!$stream->isEOF()) {
+            $token = $stream->current;
+            if ($token->test(Token::NAME_TYPE) && \in_array($token->value, ['object', 'subject'], true)
+                && !($previous?->test(Token::PUNCTUATION_TYPE, '.') ?? false) && !($previous?->test(Token::PUNCTUATION_TYPE, '?.') ?? false)) {
+                return true;
+            }
+            $previous = $token;
+            $stream->next();
+        }
+
+        return false;
+    }
+
+    /**
+     * `$expression` evaluated without a subject, memoized until the next {@see forget()}.
+     */
+    private function granted(string $expression): bool
+    {
+        return $this->subjectless[$expression] ??= $this->isGranted($expression, null);
     }
 
     /**

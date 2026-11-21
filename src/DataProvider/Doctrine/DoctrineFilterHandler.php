@@ -147,11 +147,15 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * @param iterable<DoctrineFilterArmInterface>                                   $arms             author arms for custom filter types, consulted in order
      * @param (\Closure(BelongsToMany, class-string): ?PivotAssociation)|null $pivotAssociation the association entity behind a pivot `belongsToMany` declared on an entity class, or null when the relation's related type has no entity
      * @param (\Closure(class-string, list<string>): ?IdEncoderInterface)|null $encoderFor   the id encoder that decodes a wire id compared with the entity class's id, given the types the filter names
+     * @param (\Closure(string): list<DoctrineExtensionInterface>)|null        $extensionsFor the query extensions that scope a type's rows, applied to every relation a path reaches through
+     * @param (\Closure(string): ?class-string)|null                            $entityClassFor the entity class serving a type, whose query extensions scope the targets a WhereMorph of that type matches
      */
     public function __construct(
         iterable $arms = [],
         private readonly ?\Closure $pivotAssociation = null,
         private readonly ?\Closure $encoderFor = null,
+        private readonly ?\Closure $extensionsFor = null,
+        private readonly ?\Closure $entityClassFor = null,
     ) {
         $this->arms = \is_array($arms) ? \array_values($arms) : \iterator_to_array($arms, false);
         $this->dates = new NaiveDateTimeStorage();
@@ -303,7 +307,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $relation = $filter->resolvedTarget()?->relation;
 
         if ($relation instanceof MorphTo && ($columns = $relation->identifierColumns()) !== null) {
-            return $this->morphPredicate($query, $query, $alias, $columns->type, $columns->storedValues($selection->type), $columns->id, $selection->ids);
+            $this->morphPredicate($query, $query, $alias, $columns->type, $columns->storedValues($selection->type), $columns->id, $selection->ids);
+
+            return $this->scopeMorph($query, $query, $alias, $columns->id, $relation, $selection->type);
         }
 
         if ($relation instanceof MorphToMany && ($rows = $relation->linkRowFields()) !== null) {
@@ -316,6 +322,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 ->from($rows->through, $rowAlias)
                 ->where(\sprintf('%s.%s = %s', $rowAlias, $rows->owner, $alias));
             $this->morphPredicate($query, $sub, $rowAlias, $rows->type, $rows->storedValues($selection->type), $rows->id, $selection->ids);
+            $this->scopeMorph($query, $sub, $rowAlias, $rows->id, $relation, $selection->type);
 
             return $query->andWhere($query->expr()->exists($sub->getDQL()));
         }
@@ -325,6 +332,60 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter->key,
             $filter->relation,
         ));
+    }
+
+    /**
+     * Keeps the targets of `$type` a WhereMorph matches, by the id `$alias` stores under
+     * `$idField`, to those the type's query extensions admit, as its endpoints' reads do,
+     * so a target the scope hides never matches. Through a relation the caller may not
+     * read it matches none. A type served by no entity this provider knows, or scoped by
+     * no extension, is compared as stored.
+     */
+    private function scopeMorph(QueryBuilder $query, QueryBuilder $predicateOn, string $alias, string $idField, RelationInterface $relation, string $type): QueryBuilder
+    {
+        $paths = $this->paths;
+        if ($paths === null) {
+            return $predicateOn;
+        }
+        if ($paths->refuses($relation)) {
+            return $predicateOn->andWhere('1 = 0');
+        }
+
+        $extensions = $this->extensionsFor !== null ? ($this->extensionsFor)($type) : [];
+        $class = $this->entityClassFor !== null ? ($this->entityClassFor)($type) : null;
+        if ($extensions === [] || $class === null) {
+            return $predicateOn;
+        }
+
+        $metadata = $query->getEntityManager()->getClassMetadata($class);
+        $scopeAlias = 'jsonapi_morph_scope_' . ++$this->subqueries;
+        $scope = $query->getEntityManager()->createQueryBuilder()
+            ->select(DoctrineIdentifiers::path($metadata, $scopeAlias))
+            ->from($metadata->getName(), $scopeAlias);
+        $context = new ExtensionContext($type, QueryPurpose::FetchRelatedCollection, $paths->request());
+        foreach ($extensions as $extension) {
+            $scope = $extension->apply($scope, $context);
+        }
+        $this->adoptParameters($query, $scope);
+
+        return $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $scope->getDQL()));
+    }
+
+    /**
+     * Moves the parameters a scope subquery's extensions bound onto `$query`, which
+     * executes it.
+     */
+    private function adoptParameters(QueryBuilder $query, QueryBuilder $scope): void
+    {
+        $parameters = $query->getParameters();
+        foreach ($scope->getParameters() as $parameter) {
+            // An extension binds the same name on every hop it scopes; one binding serves them all.
+            $bound = $query->getParameter($parameter->getName());
+            if ($bound !== null) {
+                $parameters->removeElement($bound);
+            }
+            $parameters->add($parameter);
+        }
     }
 
     /**
@@ -597,6 +658,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             DoctrineIdentifiers::path($relatedMetadata, $relatedAlias),
             $membership->getDQL(),
         ));
+        $this->scopeHop($query, $subQuery, $relatedAlias, $relatedMetadata, $relations[0] ?? null);
 
         // Chain the remaining intermediate relationship segments off the related
         // root, resolving each as an association at build time; the final segment
@@ -614,11 +676,13 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $intermediate = $joinsLeaf ? \array_slice($segments, 1) : \array_slice($segments, 1, -1);
         foreach ($intermediate as $offset => $segment) {
             [$currentAlias, $currentMetadata] = $this->joinHop($subQuery, $currentAlias, $currentMetadata, $segment, $relations[$offset + 1] ?? null);
+            $this->scopeHop($query, $subQuery, $currentAlias, $currentMetadata, $relations[$offset + 1] ?? null);
         }
 
         if (!$joinsLeaf) {
             if ($currentMetadata->hasAssociation($last) && ($currentMetadata->isCollectionValuedAssociation($last) || $currentMetadata->isAssociationInverseSide($last))) {
                 [$currentAlias, $currentMetadata] = $this->joinHop($subQuery, $currentAlias, $currentMetadata, $last, null);
+                $this->scopeHop($query, $subQuery, $currentAlias, $currentMetadata, $relations[\count($segments) - 1] ?? null);
             } else {
                 $leafField = $this->assertLeaf($currentMetadata, $last);
             }
@@ -629,6 +693,48 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         return $subQuery;
+    }
+
+    /**
+     * Keeps the rows `$alias` reaches through `$relation` to those its related type's
+     * query extensions admit, as the related endpoint's read does, so a row the scope
+     * hides never matches. A relation the caller may not read admits none. The extensions
+     * run on a subquery rooted on the related entity, and their parameters move onto the
+     * outer `$query`, which executes the embedded `EXISTS`.
+     *
+     * @param ClassMetadata<object> $metadata the entity `$alias` names
+     */
+    private function scopeHop(QueryBuilder $query, QueryBuilder $subQuery, string $alias, ClassMetadata $metadata, ?RelationInterface $relation): void
+    {
+        $paths = $this->paths;
+        if ($relation === null || $paths === null) {
+            return;
+        }
+
+        if ($paths->refuses($relation)) {
+            $subQuery->andWhere('1 = 0');
+
+            return;
+        }
+
+        $types = $relation->relatedTypes();
+        $extensions = $this->extensionsFor !== null && \count($types) === 1 ? ($this->extensionsFor)($types[0]) : [];
+        if ($extensions === []) {
+            return;
+        }
+
+        $scopeAlias = $alias . '_scope';
+        $scope = $subQuery->getEntityManager()->createQueryBuilder()
+            ->select(DoctrineIdentifiers::path($metadata, $scopeAlias))
+            ->from($metadata->getName(), $scopeAlias);
+        $context = new ExtensionContext($types[0], QueryPurpose::FetchRelatedCollection, $paths->request());
+        foreach ($extensions as $extension) {
+            $scope = $extension->apply($scope, $context);
+        }
+
+        $this->adoptParameters($query, $scope);
+
+        $subQuery->andWhere($subQuery->expr()->in(DoctrineIdentifiers::path($metadata, $alias), $scope->getDQL()));
     }
 
     /**
