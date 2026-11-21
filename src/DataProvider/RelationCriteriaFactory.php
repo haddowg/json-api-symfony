@@ -355,10 +355,9 @@ final class RelationCriteriaFactory
      * that column ({@see PivotFields::fieldForColumn()}) and attach
      * `fn($v) => PivotFields::cast($v, $field)` so a typed pivot column (a `DateTime`
      * /`bool`) binds the typed value the field deserializes to. An explicit
-     * `->deserializeUsing()` on the authored filter still wins (only a {@see Where}
-     * exposes a deserializer to thread — `WhereIn`/`WhereNotIn` bind their split list
-     * raw, and `WhereNull`/`WhereNotNull` carry no value — so the cast only attaches to
-     * a {@see Where} pivot filter). A non-`pivot.` filter is returned unchanged, and a
+     * `->deserializeUsing()` on the authored filter still wins. The cast only attaches to
+     * a {@see Where} pivot filter: a `WhereIn`/`WhereNotIn` binds its list as its own
+     * `deserializeUsing()` returns it, and `WhereNull`/`WhereNotNull` carry no value. A non-`pivot.` filter is returned unchanged, and a
      * filter family gets the same cast on each filter it resolves.
      *
      * @return list<FilterInterface>

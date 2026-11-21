@@ -288,6 +288,19 @@ abstract class FilterFamilyConformanceTestCase extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:actions')]
+    public function aCollectionActionComparesTheListASetFiltersDeserializerReturns(): void
+    {
+        self::assertSame(['3', '4'], $this->actionIds('/ffItems/-actions/tally?filter[kind]=stone'));
+        self::assertSame(['3', '4', '5'], $this->actionIds('/ffItems/-actions/tally?filter[kind][]=stone&filter[kind][]=berry'));
+        self::assertSame(['1', '2', '6'], $this->actionIds('/ffItems/-actions/tally?filter[notKind]=stone,berry'));
+        self::assertSame([], $this->actionIds('/ffItems/-actions/tally?filter[kind]=none'));
+        self::assertSame(['1', '2', '3', '4', '5', '6'], $this->actionIds('/ffItems/-actions/tally?filter[notKind]=none'));
+        // The constraint checks the requested kind, not the names it stands for.
+        $this->assertBadFilter($this->handle('/ffItems/-actions/tally?filter[kind]=cherry', 'POST'), 'FILTER_VALUE_INVALID', 'filter[kind]');
+    }
+
+    #[Test]
+    #[Group('spec:actions')]
     #[Group('spec:errors')]
     public function aCollectionActionRejectsWhatTheCollectionRejects(): void
     {

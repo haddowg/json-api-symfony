@@ -13,6 +13,7 @@ use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\ThroughPathResolver;
 use haddowg\JsonApi\Resource\Filter\ThroughReadAccess;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
+use haddowg\JsonApi\Resource\Sort\SortInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\Filter\WhereHasMatching;
 
 /**
@@ -268,5 +269,69 @@ final readonly class FilterPaths
     public function resolve(FilterInterface $filter): FilterInterface
     {
         return $this->resolver->resolve($filter, $this->fields);
+    }
+
+    /**
+     * `$sort` with a path reaching through relations resolved; any other sort unchanged.
+     *
+     * @throws \LogicException when the path cannot be resolved
+     */
+    public function resolveSort(SortInterface $sort): SortInterface
+    {
+        return $this->resolver->resolveSort($sort, $this->fields);
+    }
+
+    /**
+     * The relations `$sort` reaches through, as {@see ThroughReadAccess::hopsOfSort()}
+     * lists them.
+     *
+     * @return list<RelationHop>
+     */
+    public function hopsOfSort(SortInterface $sort): array
+    {
+        return $this->access === null || $this->type === null ? [] : $this->access->hopsOfSort($sort, $this->fields, $this->type);
+    }
+
+    /**
+     * The admission an in-memory walk applies to the rows each hop reaches, for core's
+     * reference handlers' `withRowAdmission()`: the relation a `->through()` hop names, or
+     * else the one the walked storage path names, keeps the rows {@see admit()} lets
+     * through. A segment that is no relation, and a row that is no object, stay as they
+     * are.
+     *
+     * @return \Closure(string, list<mixed>, ?RelationInterface=): list<mixed>
+     */
+    public function rowAdmission(): \Closure
+    {
+        return $this->admitReached(...);
+    }
+
+    /**
+     * @param list<mixed> $reached
+     *
+     * @return list<mixed>
+     */
+    private function admitReached(string $path, array $reached, ?RelationInterface $relation = null): array
+    {
+        $relation ??= $this->relationAt($path);
+        if ($relation === null) {
+            return $reached;
+        }
+
+        if ($this->refuses($relation)) {
+            return [];
+        }
+
+        // Only an object row has a provider to ask; an array row stays as it is.
+        $objects = \array_values(\array_filter($reached, \is_object(...)));
+        if ($objects === []) {
+            return $reached;
+        }
+        $admitted = [];
+        foreach ($this->admit($relation, $objects) as $row) {
+            $admitted[\spl_object_id($row)] = true;
+        }
+
+        return \array_values(\array_filter($reached, static fn(mixed $row): bool => !\is_object($row) || isset($admitted[\spl_object_id($row)])));
     }
 }

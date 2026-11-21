@@ -473,6 +473,8 @@ return static function (ContainerConfigurator $container): void {
             // Tells a 405 on a JSON:API path from one elsewhere.
             '$router' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('router')->nullOnInvalid(),
             '$firewallMap' => \Symfony\Component\DependencyInjection\Loader\Configurator\service('security.firewall.map')->nullOnInvalid(),
+            // Present on a Doctrine application that maps an entity.
+            '$appliedExtensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\AppliedExtensions::class)->nullOnInvalid(),
         ])
         ->tag('kernel.event_listener', ['event' => 'kernel.exception', 'method' => 'onKernelException', 'priority' => 128])
         // Below Security's firewall listener (1) so the entry point runs first, above
@@ -520,8 +522,14 @@ return static function (ContainerConfigurator $container): void {
                 // The current server's output zone, so rendered pivot DateTime values
                 // follow it the way attributes do.
                 '$outputTimezone' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone::class),
+                '$appliedExtensions' => \Symfony\Component\DependencyInjection\Loader\Configurator\service(\haddowg\JsonApiBundle\DataProvider\Doctrine\AppliedExtensions::class),
             ])
             ->tag(JsonApiBundle::DATA_PROVIDER_TAG, ['priority' => -128]);
+
+        // The query extensions applied during the request, which the exception listener
+        // names when Doctrine refuses an alias defined twice in one query.
+        $services->set(\haddowg\JsonApiBundle\DataProvider\Doctrine\AppliedExtensions::class)
+            ->tag('kernel.reset', ['method' => 'reset']);
 
         // The write twin, same -128 fallback. Both $entityClassByType arguments
         // are filled by the DoctrineEntityMapPass (which also removes both

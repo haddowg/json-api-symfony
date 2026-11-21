@@ -8,6 +8,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
@@ -41,6 +42,14 @@ final class OwnedFolderResource extends AbstractResource
                 static fn(mixed $holder): array => \is_object($holder) ? \haddowg\JsonApiBundle\Tests\Functional\App\OwnedRows\Memo::heldBy($holder) : [],
             ),
             HasMany::make('labels', 'folderLabels'),
+        ];
+    }
+
+    public function filters(): array
+    {
+        return [
+            // Folders holding a note by this owner, among the notes the caller's scope admits.
+            Where::make('noteOwner', 'owner')->through('notes'),
         ];
     }
 }

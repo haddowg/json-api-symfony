@@ -37,6 +37,33 @@ final class ReadQueryTest extends MusicCatalogKernelTestCase
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    public function aDateRangeThroughTheAlbumComparesItsAvailableFromDay(): void
+    {
+        // OK Computer (tracks 1 and 3) is available from 1997-05-21, Dummy (track 4)
+        // from 1994-08-22. The album's `availableFrom` is a Date, so the bounds are days.
+        self::assertSame(['1', '3'], $this->trackIds($this->fetch('/tracks?sort=title&filter[albumAvailableFrom][min]=1995-01-01')));
+        self::assertSame(['1', '3', '4'], $this->trackIds($this->fetch('/tracks?sort=title&filter[albumAvailableFrom][max]=1997-05-21')));
+        self::assertSame(400, $this->handle('/tracks?filter[albumAvailableFrom][min]=1995-01-01T00:00:00Z')->getStatusCode());
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sorting')]
+    public function tracksSortByTheirAlbumsTitleOnOffsetAndCursorPages(): void
+    {
+        self::assertSame(['4', '1', '3'], $this->trackIds($this->fetch('/tracks?sort=albumTitle,title')));
+        self::assertSame(['1', '3', '4'], $this->trackIds($this->fetch('/tracks?sort=-albumTitle,title')));
+
+        $first = $this->decode($this->handle('/tracks?sort=albumTitle,title&page[kind]=cursor&page[size]=2'));
+        self::assertSame(['4', '1'], $this->trackIds($first));
+        $links = $first['links'] ?? null;
+        self::assertIsArray($links);
+        $next = \is_array($links['next'] ?? null) ? $links['next']['href'] ?? null : $links['next'] ?? null;
+        self::assertIsString($next);
+        self::assertSame(['3'], $this->trackIds($this->decode($this->handle((string) \preg_replace('#^https?://[^/]+#', '', $next)))));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     public function aBooleanFilterWithADefaultNarrowsTheCollection(): void
     {
         // `explicit` defaults to false, so the bare collection hides the one explicit

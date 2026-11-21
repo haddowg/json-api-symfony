@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DependencyInjection\Compiler;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDataPersister;
 use haddowg\JsonApiBundle\DataPersister\Doctrine\DoctrineDecimalStorageCast;
+use haddowg\JsonApiBundle\DataProvider\Doctrine\AppliedExtensions;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineServableWarmer;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\PivotAssociationResolver;
@@ -76,6 +77,7 @@ final class DoctrineEntityMapPass implements CompilerPassInterface
         DoctrineRelationshipLoadState::class,
         PivotAssociationResolver::class,
         DoctrineDecimalStorageCast::class,
+        AppliedExtensions::class,
     ];
 
     public function process(ContainerBuilder $container): void

@@ -737,8 +737,9 @@ so the same spec test passes on both providers.
 | `WhereMorph` over a `MorphTo` | `typeCol IN (:types)` and, when ids are sent, `idCol IN (:ids)` on the columns `identifiedByColumns()` names; `idCol` is also kept to the ids the requested type's query extensions admit, when it has any |
 | `WhereMorph` over a `MorphToMany` | a correlated `EXISTS` over the `through()` entity `identifiedByRows()` names, its owner the outer row, its type and id compared and scoped as for a `MorphTo` |
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
-| `WhereThrough` | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
-| `WhereThroughIn` | the same correlated `EXISTS` with `IN (:list)` at the leaf; an empty list is `1 = 0` |
+| any of the above with `->through()` | one correlated `EXISTS` joining each relation of the path, each reached entity kept to the rows its type's query extensions admit, with the filter's own translation applied to the last one |
+| `WhereThrough` (deprecated) | dotted-traversal correlated `EXISTS` (the related entity narrowed by the leaf comparison) |
+| `WhereThroughIn` (deprecated) | the same correlated `EXISTS` with `IN (:list)` at the leaf; an empty list is `1 = 0` |
 | `WhereHasMatching` | correlated `EXISTS` whose related entity is narrowed by an author-supplied `Criteria`/closure (Doctrine-only) |
 | `WhereAll` / `WhereAny` | the children recombined with `andX()` / `orX()` as one composite `andWhere` (see below) |
 | `Where` pinned with `->fixed()` | the same DQL as the underlying `Where`, its compared value pinned server-side (no dedicated arm — it rides the `deserialize` seam) |
@@ -769,9 +770,12 @@ A few translations carry nuance:
   core's `ListValue::members()`, as the in-memory handler does: an array as is, a
   string split on the delimiter while the list is delimited and kept whole when it is
   array-only. Without `acceptsList()` an array passes through and a string is split.
+  A `WhereIn` or `WhereNotIn` declaring `deserializeUsing()` then hands the members to
+  that closure in one call and binds the list it returns, as the in-memory handler does.
 - **Empty-list semantics.** `WhereIn`/`WhereIdIn` with an empty list match nothing
   (`IN ()` is not valid SQL, so the handler emits `1 = 0`); the negated variants
-  then match everything (a no-op).
+  then match everything (a no-op). An empty list a `deserializeUsing()` returns is
+  treated the same way.
 - **`WhereMorph` compares declared fields.** A `MorphTo` it filters must declare
   [`identifiedByColumns()`](relationships.md#a-morphto-stored-as-a-type-and-id-pair) and a
   `MorphToMany` must declare `identifiedByRows()`, since a closure from `identifiedBy()`
@@ -874,7 +878,37 @@ the in-memory provider does.
 Cursor pagination keys are not converted. A cursor carries the row's value as the
 provider read it, so its wall-clock time already matches the stored column.
 
+### Filters reaching through relations: `->through()`
+
+A filter declared with [`->through()`](https://github.com/haddowg/json-api/blob/main/docs/filters.md#reaching-through-relations-with-through)
+reads a field of the type its path of relations reaches. The handler joins every relation
+of the path inside one correlated `EXISTS`, so a to-many hop neither multiplies rows nor
+loads the relation, and applies the filter's own translation from the table above to the
+entity the last join reaches. For `campaign.advertiser` and a `Where` on the advertiser's
+name, with the membership correlation elided:
+
+    WHERE EXISTS SELECT 1 FROM campaign c INNER JOIN advertiser a ON a.id = c.advertiser_id
+      WHERE c.id IN correlated-membership AND a.id IN scoped-advertiser-ids AND a.name = ?
+
+Each entity a hop reaches is kept to the rows its type's
+[query extensions](authorization.md#with-a-doctrine-extension) admit, applied under
+`QueryPurpose::FetchRelatedCollection` to a subquery of that entity's ids, so a row a
+scope hides matches no filter. A relation that holds nothing gives the `EXISTS` no row,
+so it never matches, `WhereNull` and `WhereSet` sent `false` included; an existence filter
+at the end of a path, such as `WhereDoesntHave::make('unadvertised', 'advertiser')->through('campaign')`,
+is how to find empty relations, and it counts only the rows the scope admits. A wire id
+the leaf compares is decoded once, by core, through the reached type's encoder.
+
+The warm-up refuses a path the provider can't run, naming the filter: a segment that is
+not an association of the entity it starts from (a pivot `belongsToMany` is joined
+through its association entity), a hop into a type no entity maps or one a provider
+other than Doctrine scopes, and a leaf that is not a field or association of the reached
+entity.
+
 ### Relationship-existence filtering: `WhereHas`, `WhereThrough`, `WhereHasMatching`
+
+`WhereThrough` and `WhereThroughIn` are deprecated in favour of `->through()` and are
+removed in the next major version; they keep the behaviour described here until then.
 
 Three filters keep a row by what its *relationships* contain, never by a column on
 the row itself. All three execute as the single correlated `EXISTS` subquery
@@ -1024,6 +1058,16 @@ family resolves `cap` with the request, and the handler sees the sort it returne
 `SortByField` translates as above, anything else goes to its arm like any custom sort.
 The same matching runs for the primary collection, related and relationship
 endpoints, `relatedQuery[<path>][sort]` and cursor pages.
+
+A `SortByField` declared with [`->through()`](https://github.com/haddowg/json-api/blob/main/docs/sorts.md#sorting-by-a-related-field-through)
+left-joins each to-one relation of its path, once per query however many sorts share it,
+and orders by the leaf column of the entity the last join reaches. Each join is kept to
+the rows the reached type's query extensions admit, so a relation that holds nothing and
+a row a scope hides both leave the join null, and the row sorts as a null column does:
+by the platform's own order on an offset page, and as the largest value on a cursor page.
+On a cursor page the level selects the joined column and the cursor reads its boundary
+value from the query rather than from the entity's relations, so the token and the
+`WHERE` agree on scoped rows. A path through a to-many is refused at warm-up.
 
 Source: [`DoctrineSortHandler`](../src/DataProvider/Doctrine/DoctrineSortHandler.php).
 

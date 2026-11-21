@@ -15,6 +15,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\Security\InMemorySecurityTestKern
 class InMemoryRelatedRowReadGateTest extends JsonApiFunctionalTestCase
 {
     use RelatedRowReadGateConformance;
+    use ThroughReadGateConformance;
 
     protected static function getKernelClass(): string
     {

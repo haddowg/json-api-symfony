@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\FilterFamily;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Constraint\In;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
@@ -13,16 +14,20 @@ use haddowg\JsonApi\Resource\Filter\FilterFamily;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
+use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 
 /**
  * Items filterable by list and by family. `name` and `weight` take a delimited list,
  * `labels` an array-only one. The `attr` family resolves a column to a scalar filter,
  * the `any` family to a list filter, and the exact `attr.shade` sits beside `attr`.
  * `only` and the `one` family's `one.name` are singular filters on the same column.
+ * `kind` and `notKind` take kinds of fruit, each standing for the names it covers.
  */
 abstract class BaseItemResource extends AbstractResource
 {
     public static string $type = 'ffItems';
+
+    private const array KINDS = ['stone' => ['cherry', 'damson'], 'berry' => ['elder'], 'none' => []];
 
     public function fields(): array
     {
@@ -42,6 +47,8 @@ abstract class BaseItemResource extends AbstractResource
             WhereIn::make('name')->acceptsList(),
             WhereIn::make('labels', 'label')->acceptsList(delimited: false),
             WhereIn::make('weight')->acceptsList()->integer(),
+            WhereIn::make('kind', 'name')->constrain(new In(\array_keys(self::KINDS)))->acceptsList()->deserializeUsing(self::names(...)),
+            WhereNotIn::make('notKind', 'name')->constrain(new In(\array_keys(self::KINDS)))->acceptsList()->deserializeUsing(self::names(...)),
             Where::make('attr.shade', 'color'),
             Where::make('only', 'name')->singular(),
             FilterFamily::make('one', static fn(string $suffix, JsonApiRequestInterface $request): ?FilterInterface => $suffix === 'name'
@@ -58,5 +65,22 @@ abstract class BaseItemResource extends AbstractResource
             })
                 ->acceptsList(),
         ];
+    }
+
+    /**
+     * @param list<mixed> $kinds
+     *
+     * @return list<string>
+     */
+    private static function names(array $kinds): array
+    {
+        $names = [];
+        foreach ($kinds as $kind) {
+            foreach (\is_string($kind) ? self::KINDS[$kind] ?? [] : [] as $name) {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
     }
 }

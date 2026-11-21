@@ -42,6 +42,7 @@ use haddowg\JsonApiBundle\DataProvider\CollectionCriteria;
 use haddowg\JsonApiBundle\DataProvider\CriteriaApplier;
 use haddowg\JsonApiBundle\DataProvider\DataProviderInterface;
 use haddowg\JsonApiBundle\DataProvider\FetchesByIdsInterface;
+use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
 use haddowg\JsonApiBundle\DataProvider\KeysCursorSortsInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotAwareProviderInterface;
@@ -147,6 +148,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * @param iterable<DoctrineFilterArmInterface>   $filterArms        author arms for custom `FilterInterface` types (autoconfigured tag)
      * @param iterable<DoctrineSortArmInterface>     $sortArms          author arms for custom `SortInterface` types (autoconfigured tag)
      * @param ?RequestScopedOutputTimezone           $outputTimezone    the current server's output zone, applied to the pivot DateTime values the provider renders
+     * @param ?AppliedExtensions                     $appliedExtensions records the extensions applied in the request, to explain an alias Doctrine finds defined twice
      */
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
@@ -158,6 +160,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         iterable $filterArms = [],
         iterable $sortArms = [],
         private readonly ?RequestScopedOutputTimezone $outputTimezone = null,
+        private readonly ?AppliedExtensions $appliedExtensions = null,
     ) {
         $this->extensions = \is_array($extensions) ? \array_values($extensions) : \iterator_to_array($extensions, false);
         $this->targetEncoders = new DoctrineTargetEncoders($this->entityManager, $this->entityClassByType, $this->idEncoders);
@@ -169,10 +172,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 ? $this->pivotAssociations->discover($relation, $ownerClass, $this->entityClassByType[$relation->relatedTypes()[0]])
                 : null,
             fn(string $class, array $named): ?IdEncoderInterface => $this->targetEncoders->encoderFor($class, $named),
-            $this->extensionsFor(...),
+            $this->appliedExtensionsFor(...),
             fn(string $type): ?string => $this->entityClassByType[$type] ?? null,
         );
-        $this->sortHandler = new DoctrineSortHandler($sortArms);
+        $this->sortHandler = new DoctrineSortHandler($sortArms, $this->appliedExtensionsFor(...));
         $this->ids = new DoctrineIdentifiers($this->entityManager);
         $this->linkRows = new DoctrineLinkRows($this->entityManager, $this->filterHandler, $this->sortHandler);
         $this->relationScope = new RelationScope($this->entityManager, $this->ids);
@@ -235,10 +238,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder->andWhere(DoctrineIdentifiers::path($metadata, self::ROOT_ALIAS) . ' = :jsonapi_id');
         $this->ids->bind($builder, 'jsonapi_id', $metadata, $storageKey);
 
-        foreach ($extensions as $extension) {
-            // The SPI fetchOne carries no request, so the context's request is null.
-            $builder = $extension->apply($builder, new ExtensionContext($type, QueryPurpose::FetchOne));
-        }
+        // The SPI fetchOne carries no request, so the context's request is null.
+        $builder = $this->extend($builder, new ExtensionContext($type, QueryPurpose::FetchOne, aliases: ExtensionAliases::of($builder)));
 
         $result = $builder->getQuery()->getOneOrNullResult();
 
@@ -325,12 +326,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->getRepository($entityClass)
             ->createQueryBuilder(self::ROOT_ALIAS);
 
-        foreach ($this->extensionsFor($type) as $extension) {
-            // The primary collection: the SPI fetchCollection carries no request, so the
-            // context's request is null. A related load of the same type reports the
-            // distinct FetchRelatedCollection purpose (and carries the request).
-            $builder = $extension->apply($builder, new ExtensionContext($type, QueryPurpose::FetchCollection));
-        }
+        // The primary collection: the SPI fetchCollection carries no request, so the
+        // context's request is null. A related load of the same type reports the
+        // distinct FetchRelatedCollection purpose (and carries the request).
+        $builder = $this->extend($builder, new ExtensionContext($type, QueryPurpose::FetchCollection, aliases: ExtensionAliases::of($builder)));
 
         // A cursor (keyset) window is its own pushed-down execution (the keyset
         // WHERE + the forced NULL=largest ORDER BY); the OffsetWindow / null-window
@@ -373,10 +372,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->getRepository($this->entityClassFor($type))
             ->createQueryBuilder(self::ROOT_ALIAS);
 
-        $context = new ExtensionContext($type, QueryPurpose::ActionCollection, $criteria->request, $action);
-        foreach ($this->extensionsFor($type) as $extension) {
-            $builder = $extension->apply($builder, $context);
-        }
+        $builder = $this->extend($builder, new ExtensionContext($type, QueryPurpose::ActionCollection, $criteria->request, $action, ExtensionAliases::of($builder)));
 
         return $this->applier->applyFilters($criteria, $builder, $this->filterHandler);
     }
@@ -447,7 +443,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $metadata = $this->entityManager->getClassMetadata($entityClass);
         $pkColumn = $metadata->getSingleIdentifierFieldName();
 
-        $columns = $this->resolveKeysetColumns($criteria, $pkColumn);
+        $columns = $this->resolveKeysetColumns($criteria, $pkColumn, $paths);
 
         // Apply the FILTERS only (the keyset owns the order). A sort-stripped,
         // window-less criteria reuses the shared applier so the filter semantics
@@ -477,10 +473,14 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $counter = $criteria->wantsCount ? clone $builder : null;
 
         $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, sorts: $this->sortHandler, ids: $this->ids);
-        if ($boundary !== null) {
-            $keyset->applyAfter($builder, $boundary, $orderColumns);
-        }
-        $keyset->orderBy($builder, $orderColumns);
+        $order = static function () use ($keyset, $builder, $boundary, $orderColumns): void {
+            if ($boundary !== null) {
+                $keyset->applyAfter($builder, $boundary, $orderColumns);
+            }
+            $keyset->orderBy($builder, $orderColumns);
+        };
+        // A level reaching through relations scopes its joins for the request.
+        $paths !== null ? $this->sortHandler->withPaths($paths, $order) : $order();
         $selected = $keyset->selectedValues();
 
         return $this->windowExecutor->runCursor(
@@ -528,23 +528,23 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
-     * Resolves the keyset columns for `$criteria` through the core
-     * {@see KeysetResolver}, feeding it the criteria's sort
-     * inputs — the requested `?sort`, the declared vocabulary and the resource
-     * default — so the cursor path's sort validation stays byte-identical to the
-     * plain (offset) path's.
+     * The keyset columns a cursor page of `$criteria` walks, each sort reaching through
+     * relations resolved and checked as an offset page's is, and in `$paths` the paths its
+     * joins read them with.
      *
      * @return list<KeysetColumn>
      */
-    private function resolveKeysetColumns(CollectionCriteria $criteria, string $pkColumn): array
+    private function resolveKeysetColumns(CollectionCriteria $criteria, string $pkColumn, ?FilterPaths &$paths = null): array
     {
-        return $this->keysetResolver->resolve(
+        [$columns, $paths] = $this->applier->keysetColumns($criteria, $this->keysetResolver->resolve(
             $criteria->queryParameters->sort,
             $criteria->sorts,
             $criteria->defaultSort,
             $pkColumn,
             request: $criteria->request,
-        );
+        ));
+
+        return $columns;
     }
 
     /**
@@ -627,9 +627,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         // entity stays the outer root, so the shared machinery below is identical).
         $this->relationScope->scopeToParent($builder, self::ROOT_ALIAS, $relatedClass, $parent, $relation);
 
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
 
         return $this->relatedPage($relatedType, $relatedClass, $builder, $criteria);
     }
@@ -1037,9 +1035,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->where(DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS) . ' IN (:jsonapi_target_ids)');
         $this->ids->bindList($builder, 'jsonapi_target_ids', $relatedMetadata, $targetIds);
 
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
 
         $loaded = $builder->getQuery()->getResult();
         \assert(\is_array($loaded));
@@ -1187,7 +1183,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      */
     private function relatedExtensions(string $relatedType, ?JsonApiRequestInterface $request): RelatedExtensions
     {
-        return new RelatedExtensions($this->entityManager, $this->extensionsFor($relatedType), $relatedType, $request);
+        return new RelatedExtensions($this->entityManager, $this->appliedExtensionsFor($relatedType), $relatedType, $request);
     }
 
     /**
@@ -1483,10 +1479,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->createQueryBuilder($subAlias)
             ->select(DoctrineIdentifiers::path($this->entityManager->getClassMetadata($relatedClass), $subAlias));
 
-        $context = new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request);
-        foreach ($extensions as $extension) {
-            $sub = $extension->apply($sub, $context);
-        }
+        $sub = $this->extend($sub, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::share($builder, $sub)));
 
         $merged = $builder->getParameters();
         foreach ($sub->getParameters() as $parameter) {
@@ -1527,9 +1520,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->andWhere(DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS) . ' = :jsonapi_to_one_id');
         $this->ids->bind($builder, 'jsonapi_to_one_id', $relatedMetadata, $targetId);
 
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
@@ -1634,9 +1625,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->andWhere(DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS) . ' IN (:jsonapi_to_one_ids)');
         $this->ids->bindList($builder, 'jsonapi_to_one_ids', $relatedMetadata, $targetIds);
 
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
 
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
@@ -1787,9 +1776,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     ): PivotCollectionResult|PivotCursorCollectionResult {
         $builder = $this->pivotQuery($relatedType, $parent, $relation);
 
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
 
         // A cursor (keyset) window is its own execution — the keyset owns the order
         // (forced NULL=largest + PK tiebreak), so only the FILTERS apply here (the
@@ -2215,9 +2202,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
         $builder = $this->applier->apply($criteria, $builder, $this->filterHandler, $this->sortHandler);
 
         $results = [];
@@ -2253,9 +2238,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         JsonApiRequestInterface $request,
     ): RelatedBatch {
         $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
         $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler);
 
         $order = [];
@@ -2331,9 +2314,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $keyset = new DoctrineKeyset($metadata, self::ROOT_ALIAS, $aliasOfColumn, ['pivot' => $this->entityManager->getClassMetadata($association->entityClass)], $this->sortHandler, $this->ids);
 
         $builder = $this->pivotBatchQuery($relatedType, $parents, $relation);
-        foreach ($this->extensionsFor($relatedType) as $extension) {
-            $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-        }
+        $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
         $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler);
 
         $rowKeyOfColumn = $this->pivotKeysetRowKeys($builder, $relation, $aliasOfColumn, $this->keysetResolver->columnNames($columns));
@@ -2999,9 +2980,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 $this->entityManager->getRepository($relatedClass)->createQueryBuilder(self::ROOT_ALIAS),
                 self::ROOT_ALIAS,
             );
-            foreach ($this->extensionsFor($relatedType) as $extension) {
-                $builder = $extension->apply($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request));
-            }
+            $builder = $this->extend($builder, new ExtensionContext($relatedType, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::of($builder)));
 
             $results[(string) $wireId] = $this->relatedPage($relatedType, $relatedClass, $builder, $criteria);
         }
@@ -3142,6 +3121,36 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $this->extensions,
             static fn(DoctrineExtensionInterface $extension): bool => $extension->supports($type),
         ));
+    }
+
+    /**
+     * The extensions for `$type`, recorded as applied to the current request's queries.
+     *
+     * @return list<DoctrineExtensionInterface>
+     */
+    private function appliedExtensionsFor(string $type): array
+    {
+        $extensions = $this->extensionsFor($type);
+        $this->appliedExtensions?->record($extensions);
+
+        return $extensions;
+    }
+
+    /**
+     * Applies the extensions for the context's type to `$builder`. A builder an extension
+     * returns in its place keeps the statement's aliases.
+     */
+    private function extend(QueryBuilder $builder, ExtensionContext $context): QueryBuilder
+    {
+        foreach ($this->appliedExtensionsFor($context->type) as $extension) {
+            $applied = $extension->apply($builder, $context);
+            if ($applied !== $builder) {
+                ExtensionAliases::share($builder, $applied);
+            }
+            $builder = $applied;
+        }
+
+        return $builder;
     }
 
     /**

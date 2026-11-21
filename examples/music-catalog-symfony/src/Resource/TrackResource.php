@@ -20,10 +20,12 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Field\Time;
+use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Link\DeclaredLink;
 use haddowg\JsonApi\Resource\Link\DeclaredLinkBuilder;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\DataFixtures\SeedManifest;
 use haddowg\JsonApiBundle\Examples\MusicCatalog\Entity\Track;
@@ -174,6 +176,18 @@ final class TrackResource extends AbstractResource
             WhereIn::make('genres'),
             // The shared `filter[q]` search key (see AlbumResource), here over the track title.
             FullTextSearch::make('q', ['title']),
+            // Reached through the album: its `availableFrom` is a Date, so the range takes
+            // full dates and compares calendar days, as it would on the album itself.
+            DateRange::make('albumAvailableFrom', 'availableFrom')->through('album'),
+        ];
+    }
+
+    public function sorts(): array
+    {
+        return [
+            // Orders tracks by their album's title. A track whose album the caller can't
+            // see sorts as a null title would.
+            SortByField::make('albumTitle', 'title')->through('album')->describedAs('By the title of the track\'s album.'),
         ];
     }
 }
