@@ -113,7 +113,9 @@ final class AssociationIdTestKernel extends Kernel
         $services->set(AssocRunResource::class);
         $services->set(AssocConfigResource::class);
         $services->set(AssocOpenConfigResource::class);
+        $services->set(AssocCampaignResource::class);
         $services->set(HiddenConfigsExtension::class);
+        $services->set(HiddenCampaignsExtension::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

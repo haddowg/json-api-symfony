@@ -13,8 +13,10 @@ use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereIdIn;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 use haddowg\JsonApi\Resource\Filter\WhereThroughIn;
+use haddowg\JsonApi\Resource\Sort\SortByField;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 #[AsJsonApiResource(entity: AssocRunEntity::class)]
@@ -55,6 +57,15 @@ final class AssocRunResource extends AbstractResource
             WhereThroughIn::make('config', 'configs'),
             WhereThroughIn::make('primaryIn', 'primary'),
             WhereThrough::make('primaryIs', 'primary'),
+            WhereIdIn::make('primary'),
+            WhereIdIn::make('configId')->through('configs'),
+        ];
+    }
+
+    public function sorts(): array
+    {
+        return [
+            SortByField::make('primaryId', 'id')->through('primary'),
         ];
     }
 }
