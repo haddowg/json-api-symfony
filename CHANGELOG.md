@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.22.0](https://github.com/haddowg/json-api-symfony/compare/v2.21.1...v2.22.0) (2026-11-21)
+
+
+### Features
+
+* run filters and sorts that reach through relations ([#418](https://github.com/haddowg/json-api-symfony/issues/418)) ([e6fb5a9](https://github.com/haddowg/json-api-symfony/commit/e6fb5a915386f8d266dd05f2200d336317ba9c28))
+* run pivot segments in paths that reach through relations ([#422](https://github.com/haddowg/json-api-symfony/issues/422)) ([c272515](https://github.com/haddowg/json-api-symfony/commit/c27251502081ae7ce967f9e574a9d2ed59cdf1ab))
+* select keys of nested objects, list items and one-of variants through nested fieldsets ([8fca79e](https://github.com/haddowg/json-api-symfony/commit/8fca79ed70674b453c8bf19107bb309dbc0245cd))
+* type the in-memory provider's closures on the class of its rows ([#425](https://github.com/haddowg/json-api-symfony/issues/425)) ([677ea0f](https://github.com/haddowg/json-api-symfony/commit/677ea0f8c660b17eb8022c995431c8e6dc217278))
+* validate and fill typed request and resource object meta ([#420](https://github.com/haddowg/json-api-symfony/issues/420)) ([58271d5](https://github.com/haddowg/json-api-symfony/commit/58271d58dc16c7920465d62fcd73e9585d3552e7))
+
+
+### Bug Fixes
+
+* cast a pivot value for the write that creates or keeps its row ([#424](https://github.com/haddowg/json-api-symfony/issues/424)) ([e264135](https://github.com/haddowg/json-api-symfony/commit/e264135d1b6f09e525281960f000db839a91005a))
+* check each written value's JSON type without symfony/validator ([#414](https://github.com/haddowg/json-api-symfony/issues/414)) ([8913536](https://github.com/haddowg/json-api-symfony/commit/89135361a5b730fe50fa3de64cbb03449df7dead))
+* compare an action's input membership with the resource it was called on ([#427](https://github.com/haddowg/json-api-symfony/issues/427)) ([05f0fee](https://github.com/haddowg/json-api-symfony/commit/05f0fee51e065550b72212589625bcddc532a967))
+* compare and store each written number in its field's type ([#416](https://github.com/haddowg/json-api-symfony/issues/416)) ([0aa23ba](https://github.com/haddowg/json-api-symfony/commit/0aa23bab7858e7a82b42053c6a6cbaa170c7d814))
+* declare the relation parameter on every documentMeta implementation ([#432](https://github.com/haddowg/json-api-symfony/issues/432)) ([cf011e9](https://github.com/haddowg/json-api-symfony/commit/cf011e9467d11375fe6936a94d452e1fb329b689))
+* hold the related models in an action input's relationships ([#426](https://github.com/haddowg/json-api-symfony/issues/426)) ([7bfbca5](https://github.com/haddowg/json-api-symfony/commit/7bfbca5ccf4c16be62fe9fc9a21b8f5449105c78))
+* keep the fraction of every whole float in a served or exported document ([#429](https://github.com/haddowg/json-api-symfony/issues/429)) ([a95cad8](https://github.com/haddowg/json-api-symfony/commit/a95cad8b405ab6693107100cd833381bddbdec56))
+* leave a foreign-key to-many to the handler when an action input has nowhere to hold it ([#430](https://github.com/haddowg/json-api-symfony/issues/430)) ([82bab88](https://github.com/haddowg/json-api-symfony/commit/82bab8813342004f415670339f17699e7a15df17))
+* leave the membership of an action input a factory builds to the factory or handler ([#431](https://github.com/haddowg/json-api-symfony/issues/431)) ([509df2a](https://github.com/haddowg/json-api-symfony/commit/509df2a715e576a56c15abd02f6f4779ccf88226))
+* load a notSparseField relation the fieldset leaves out ([#412](https://github.com/haddowg/json-api-symfony/issues/412)) ([8585d62](https://github.com/haddowg/json-api-symfony/commit/8585d6265d820c9492fffe5aa89a2713bf2d9a39))
+* read an action input's locked members as a PATCH of the resource does ([#428](https://github.com/haddowg/json-api-symfony/issues/428)) ([32cdcf3](https://github.com/haddowg/json-api-symfony/commit/32cdcf3ef64fd35d8219006ca40e47ca34e641c3))
+* refuse filters that reach through relations the caller cannot read ([#415](https://github.com/haddowg/json-api-symfony/issues/415)) ([438a485](https://github.com/haddowg/json-api-symfony/commit/438a48549fbc0c1bfa2aabafbdb61b8e4e256887))
+* serve the example's playlist owner read-only on the default server ([#433](https://github.com/haddowg/json-api-symfony/issues/433)) ([f563a9b](https://github.com/haddowg/json-api-symfony/commit/f563a9b74e197121d82260e5e9b5b4f46722dd0f))
+* store a number written to a Doctrine decimal column as its decimal string ([#417](https://github.com/haddowg/json-api-symfony/issues/417)) ([4668afe](https://github.com/haddowg/json-api-symfony/commit/4668afe56ac9d967515831ff5711c19d807927a7))
+* validate a PATCH action's input in the update context ([#413](https://github.com/haddowg/json-api-symfony/issues/413)) ([30bc0ca](https://github.com/haddowg/json-api-symfony/commit/30bc0ca4eb9c4b06e3105680eea4eca690995c33))
+
 ## [2.21.1](https://github.com/haddowg/json-api-symfony/compare/v2.21.0...v2.21.1) (2026-11-18)
 
 
