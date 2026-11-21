@@ -205,6 +205,22 @@ final class DoctrineIdentifiers
     }
 
     /**
+     * The field holding the id of the entity `$metadata` maps, for a type whose id field
+     * declares `$column`: that column when the entity maps it, else the entity's single
+     * identifier field, which may be an association.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public static function idField(ClassMetadata $metadata, string $column): string
+    {
+        if ($metadata->hasField($column) || $metadata->hasAssociation($column) || $metadata->isIdentifierComposite) {
+            return $column;
+        }
+
+        return $metadata->getSingleIdentifierFieldName();
+    }
+
+    /**
      * The single-valued association on `$metadata` whose one foreign-key column is the
      * column `$field` maps, when `$field` is a field mapped beside it.
      *

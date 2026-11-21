@@ -153,6 +153,14 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private string $placeholderStem = 'jsonapi_filter_';
 
     /**
+     * The alias, declared column and mapped field of a `->through()` leaf comparing the
+     * reached type's id, while that leaf is applied.
+     *
+     * @var array{string, string, string}|null
+     */
+    private ?array $idLeaf = null;
+
+    /**
      * The declared relations of the type the filter being applied runs against, from
      * {@see withPaths()}.
      */
@@ -224,8 +232,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             $filter instanceof Where => $this->where($filter, $query, $value, $alias),
             $filter instanceof WhereIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), false, $alias),
             $filter instanceof WhereNotIn => $this->whereIn($query, $this->pivotColumn($filter->column, $alias), $this->members($filter, $value), true, $alias),
-            $filter instanceof WhereIdIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), false, $alias),
-            $filter instanceof WhereIdNotIn => $this->whereIn($query, $filter->column, $this->storageIds($query, $alias, $this->members($filter, $value)), true, $alias),
+            $filter instanceof WhereIdIn => $this->whereIn($query, $this->idColumn($query, $filter->column, $alias), $this->storageIds($query, $alias, $this->members($filter, $value)), false, $alias),
+            $filter instanceof WhereIdNotIn => $this->whereIn($query, $this->idColumn($query, $filter->column, $alias), $this->storageIds($query, $alias, $this->members($filter, $value)), true, $alias),
             $filter instanceof WhereNull => $query->andWhere(\sprintf('%s IS NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereNotNull => $query->andWhere(\sprintf('%s IS NOT NULL', $this->path($this->pivotColumn($filter->column, $alias), $alias))),
             $filter instanceof WhereSet => $this->whereSet($query, $filter, $value, $alias),
@@ -561,9 +569,13 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function applyThroughLeaf(QueryBuilder $query, QueryBuilder $sub, string $leafAlias, FilterInterface $leafFilter, mixed $leafValue, RelationPath $path, string $stem): void
     {
-        [$decoded, $placeholders] = [$this->decodedLeaf, $this->placeholderStem];
+        [$decoded, $placeholders, $idLeaf] = [$this->decodedLeaf, $this->placeholderStem, $this->idLeaf];
         $this->decodedLeaf = true;
         $this->placeholderStem = $stem;
+        $leafMetadata = $path->leafId() !== null ? $this->metadataOfAlias($sub, $leafAlias) : null;
+        if ($leafMetadata !== null) {
+            $this->idLeaf = [$leafAlias, $path->leafColumn(), DoctrineIdentifiers::idField($leafMetadata, $path->leafColumn())];
+        }
         try {
             $leafRelation = $path->leafRelation();
             if ($leafRelation !== null && ($leafFilter instanceof WhereHas || $leafFilter instanceof WhereDoesntHave)) {
@@ -573,7 +585,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 $this->applyOn($leafFilter, $sub, $leafValue, $leafAlias);
             }
         } finally {
-            [$this->decodedLeaf, $this->placeholderStem] = [$decoded, $placeholders];
+            [$this->decodedLeaf, $this->placeholderStem, $this->idLeaf] = [$decoded, $placeholders, $idLeaf];
         }
         if ($sub === $query) {
             return;
@@ -1258,6 +1270,17 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
+     * The field an id filter declaring `$column` compares on the entity at `$alias`: the
+     * entity's identifier when it maps no such field ({@see DoctrineIdentifiers::idField()}).
+     */
+    private function idColumn(QueryBuilder $query, string $column, string $alias): string
+    {
+        $metadata = $alias === 'pivot' ? null : $this->metadataOfAlias($query, $alias);
+
+        return $metadata === null ? $column : DoctrineIdentifiers::idField($metadata, $column);
+    }
+
+    /**
      * Wire ids compared with the id of the entity at `$alias`, each decoded through the
      * id encoder of the type the filters run against, the one its paths name, so an
      * entity several types serve decodes with the right one. A value the encoder can't
@@ -1373,6 +1396,10 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     {
         if (\preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/', $column) !== 1) {
             throw new \LogicException(\sprintf('"%s" is not a valid Doctrine field path.', $column));
+        }
+
+        if ($this->idLeaf !== null && $this->idLeaf[0] === $alias && $this->idLeaf[1] === $column) {
+            $column = $this->idLeaf[2];
         }
 
         return $alias . '.' . $column;

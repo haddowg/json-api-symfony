@@ -249,6 +249,9 @@ final class DoctrineAssociationIdTest extends JsonApiFunctionalTestCase
         $byId = $this->rows($this->decode($this->get('/configs?sort=label&filter[id]=30,40')));
         self::assertSame(['40', '30'], \array_column($byId, 'id'));
 
+        $byIdColumn = $this->rows($this->decode($this->get('/configs?sort=label&filter[campaignId]=30,40')));
+        self::assertSame(['40', '30'], \array_column($byIdColumn, 'id'));
+
         $paged = $this->rows($this->decode($this->get('/configs?sort=-label&page[size]=2&page[number]=2')));
         self::assertSame(['20', '10'], \array_column($paged, 'id'));
     }
@@ -373,6 +376,46 @@ final class DoctrineAssociationIdTest extends JsonApiFunctionalTestCase
 
         self::assertSame(204, $this->handle('/configs/40', 'DELETE')->getStatusCode());
         self::assertSame(404, $this->handle('/configs/40')->getStatusCode());
+    }
+
+    #[Test]
+    public function aConfigIsFilteredByTheIdsItReachesThroughItsRuns(): void
+    {
+        $this->seedPrimaryRuns();
+        $ids = fn(string $query): array => \array_column($this->rows($this->decode($this->get('/configs?sort=label&' . $query))), 'id');
+
+        self::assertSame(['10', '20'], $ids('filter[runPrimary]=20'));
+        self::assertSame(['40'], $ids('filter[runPrimary]=30'));
+        self::assertSame(['10', '20', '40'], $ids('filter[runPrimary]=20,30'));
+        self::assertSame([], $ids('filter[runPrimary]=50'));
+        self::assertSame(['40'], $ids('filter[notRunPrimary]=20'));
+    }
+
+    #[Test]
+    public function aRunIsFilteredAndSortedByTheIdsOfTheConfigsItReaches(): void
+    {
+        $this->seedPrimaryRuns();
+        $names = fn(string $query): array => \array_column(\array_column($this->rows($this->decode($this->get('/runs?' . $query))), 'attributes'), 'name');
+
+        self::assertSame(['first', 'third'], $names('sort=name&filter[primary]=10,20'));
+        self::assertSame([], $names('sort=name&filter[primary]=50'));
+        self::assertSame(['fourth'], $names('sort=name&filter[configId]=40'));
+        self::assertSame(['fifth', 'second', 'third', 'first', 'fourth'], $names('sort=primaryId,name'));
+        self::assertSame(['fourth', 'first', 'third', 'fifth', 'second'], $names('sort=-primaryId,name'));
+    }
+
+    /**
+     * Adds a run whose primary is config 30 and which holds config 40, and one whose
+     * primary is the hidden config 50 and which holds config 20.
+     */
+    private function seedPrimaryRuns(): void
+    {
+        $entityManager = $this->entityManager();
+        $config = static fn(int $id): AssocConfigEntity => $entityManager->find(AssocConfigEntity::class, $id) ?? throw new \LogicException('No config ' . $id);
+        $this->seedRun('fourth', $config(30), [$config(40)]);
+        $this->seedRun('fifth', $config(50), [$config(20)]);
+        $entityManager->flush();
+        $entityManager->clear();
     }
 
     /**

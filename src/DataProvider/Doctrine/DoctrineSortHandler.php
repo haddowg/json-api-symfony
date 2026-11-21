@@ -258,7 +258,17 @@ final class DoctrineSortHandler implements SortHandlerInterface, AliasAwareSortH
             $metadata = $target;
         }
 
-        return [$this->path($leaf->column, $current), $metadata, $leaf->column];
+        if ($path->leafId() === null) {
+            return [$this->path($leaf->column, $current), $metadata, $leaf->column];
+        }
+
+        // An id leaf reads the entity's identifier, through IDENTITY() when it is an association.
+        $field = DoctrineIdentifiers::idField($metadata, $leaf->column);
+        if ($field !== $leaf->column && $metadata->hasAssociation($field)) {
+            return [DoctrineIdentifiers::path($metadata, $current), $metadata, $field];
+        }
+
+        return [$this->path($field, $current), $metadata, $field];
     }
 
     /**

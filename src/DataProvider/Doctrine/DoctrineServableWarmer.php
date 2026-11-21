@@ -513,6 +513,9 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
             $leafRelation = $path->leafRelation();
             $leafColumn = $leafRelation !== null ? ($leafRelation->column() ?? $leafRelation->name()) : $path->leafColumn();
+            if ($leafRelation === null && $path->leafId() !== null) {
+                $leafColumn = DoctrineIdentifiers::idField($current, $leafColumn);
+            }
             if (!\str_contains($leafColumn, '.') && !$current->hasField($leafColumn) && !$current->hasAssociation($leafColumn)) {
                 throw $refuse(\sprintf('"%s" is not a field or association of %s.', $leafColumn, $current->getName()));
             }
