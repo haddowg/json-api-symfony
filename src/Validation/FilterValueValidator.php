@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Validation;
 use haddowg\JsonApi\Exception\FilterValueInvalid;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Filter\AcceptsList;
+use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
 use haddowg\JsonApi\Resource\Filter\Range;
@@ -109,13 +110,13 @@ final class FilterValueValidator
             $constraints = $this->symfonyConstraints($filter);
             if ($constraints === []) {
                 // An unconstrained filter costs nothing. A DateRange always carries
-                // its ISO-8601 shape Pattern, so it never reaches this short-circuit.
+                // its RFC 3339 shape Pattern, so it never reaches this short-circuit.
                 continue;
             }
 
             $messages = [];
             if ($filter instanceof Range) {
-                $messages = $this->boundMessages($filter, $value, $constraints);
+                $messages = $this->boundMessages($filter, $key, $value, $constraints);
             } else {
                 foreach ($members ?? $this->members($filter, $value) as $member) {
                     foreach ($this->validator->validate($member, $constraints) as $violation) {
@@ -224,15 +225,13 @@ final class FilterValueValidator
 
     /**
      * The PRESENT, non-blank bounds of a {@see \haddowg\JsonApi\Resource\Filter\Range}
-     * value — the nested `{min?, max?}` array. A blank (`''`) or absent bound is
-     * open-ended, so it is treated as **absent** and never validated (matching the
-     * in-memory and Doctrine `bound()` semantics — `filter[<key>][max]=` must not
-     * `400`); each present bound is validated individually against the range's
-     * per-bound constraints (a numeric `Pattern` for `Range`, an ISO-8601 `Pattern`
-     * for `DateRange`), so a malformed bound is a clean `400`. A non-array value is a
-     * no-op in both handlers, so there is nothing to validate.
+     * value — the nested `{min?, max?}` array — keyed by bound name. A blank (`''`) or
+     * absent bound is open-ended, so it is treated as **absent** and never validated
+     * (matching the in-memory and Doctrine `bound()` semantics — `filter[<key>][max]=`
+     * must not `400`). A non-array value is a no-op in both handlers, so there is nothing
+     * to validate.
      *
-     * @return list<mixed>
+     * @return array<string, mixed>
      */
     private function rangeMembers(mixed $value): array
     {
@@ -252,38 +251,40 @@ final class FilterValueValidator
                 continue;
             }
 
-            $members[] = $bound;
+            $members[$key] = $bound;
         }
 
         return $members;
     }
 
     /**
-     * One message per failing bound of a {@see Range}: the first constraint that rejects
-     * the bound, or for a {@see \haddowg\JsonApi\Resource\Filter\DateRange} whose
-     * bound passes them, a date that does not exist. The range's shape `Pattern` is
-     * lenient on the calendar (it admits `1997-13-99`), so a bound is also run through
-     * the filter's own date deserializer, the coercion the handlers apply, making an
-     * impossible date a clean 400 rather than a provider-divergent non-match.
+     * One message per failing bound of a {@see Range}: for a
+     * {@see \haddowg\JsonApi\Resource\Filter\DateRange}, core's message for a bound
+     * that is not the date the range takes, checked first because its shape `Pattern` is
+     * lenient on the calendar and says nothing a client can act on; otherwise the first
+     * constraint that rejects the bound.
      *
      * @param list<Constraint> $constraints
      *
      * @return list<string>
      */
-    private function boundMessages(Range $filter, mixed $value, array $constraints): array
+    private function boundMessages(Range $filter, string $key, mixed $value, array $constraints): array
     {
-        $deserialize = $filter instanceof \haddowg\JsonApi\Resource\Filter\DateRange ? $filter->deserialize : null;
-
         $messages = [];
-        foreach ($this->rangeMembers($value) as $bound) {
+        foreach ($this->rangeMembers($value) as $name => $bound) {
+            if ($filter instanceof DateRange) {
+                $invalid = $filter->invalidBound($bound, $name, \sprintf('filter[%s][%s]', $key, $name));
+                if ($invalid !== null) {
+                    $messages[] = $invalid;
+
+                    continue;
+                }
+            }
+
             foreach ($this->validator->validate($bound, $constraints) as $violation) {
                 $messages[] = (string) $violation->getMessage();
 
-                continue 2;
-            }
-
-            if ($deserialize !== null && !$deserialize($bound) instanceof \DateTimeInterface) {
-                $messages[] = 'This value is not a valid date.';
+                break;
             }
         }
 

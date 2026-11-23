@@ -181,6 +181,23 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aBadBoundThroughAPivotNamesItsParameterInTheDateMessage(): void
+    {
+        foreach (['/tpAlbums?filter[addedAt][min]=yesterday', '/tpTracks/1/playlists?filter[addedAt][min]=yesterday'] as $path) {
+            $response = $this->handle($path);
+            self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+            $errors = $this->decode($response)['errors'] ?? null;
+            self::assertIsArray($errors);
+            self::assertCount(1, $errors, $path);
+            $error = $errors[0] ?? null;
+            self::assertIsArray($error);
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $path);
+            self::assertSame('filter[addedAt][min] is not an RFC 3339 date-time with an offset, such as 2026-10-01T00:00:00Z.', $error['detail'] ?? null, $path);
+            self::assertSame(['parameter' => 'filter[addedAt]'], $error['source'] ?? null, $path);
+        }
+    }
+
+    #[Test]
     public function aPivotOnTheFirstRelationOfACollectionGoesOnPastThePivotRow(): void
     {
         self::assertSame(['1', '3'], $this->ids('/tpTracks?filter[playlistAdder]=kim'));

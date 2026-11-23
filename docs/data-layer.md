@@ -656,7 +656,14 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   not `400`). A `DateRange` bound is additionally checked for **temporal validity**: a
   value that is shape-valid RFC 3339 but not a real date (`1997-13-99T00:00:00Z`, month
   13 and day 99, which a regex cannot reject) is a clean `400`, so a calendar-invalid bound never
-  reaches the data layer where it would compare divergently across providers.
+  reaches the data layer where it would compare divergently across providers. Each bad
+  bound is one error, and its `detail` is core's message for the date the range takes,
+  naming the bound's parameter: `filter[published][min] is not an RFC 3339 date-time with
+  an offset, such as 2026-10-01T00:00:00Z.`, or `filter[published][min] is not a date like
+  2026-10-01.` over calendar days, showing the range's declared example when it has one.
+  A bad date attribute on a write reads the same way, naming the attribute by its path
+  below `/data/attributes`, such as `window/from is not an RFC 3339 date-time with an
+  offset, such as 2026-10-01T00:00:00Z.`
 
 See core's filter docs for the full decision.
 

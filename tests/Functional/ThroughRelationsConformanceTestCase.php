@@ -87,6 +87,29 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function aBadBoundThroughAPathToADateNamesItsParameterInTheDateMessage(): void
+    {
+        $cases = [
+            'filter[campaignDates][min]=2026-03-01T00:00:00Z' => 'filter[campaignDates][min] is not a date like 2026-10-01.',
+            'filter[campaignDates][max]=2026-02-30' => 'filter[campaignDates][max] is not a date like 2026-10-01.',
+            'filter[campaignDates][min]=spring' => 'filter[campaignDates][min] is not a date like 2026-10-01.',
+        ];
+
+        foreach ($cases as $query => $detail) {
+            $response = $this->handle('/thrLeads?' . $query);
+            self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+            $errors = $this->decode($response)['errors'] ?? null;
+            self::assertIsArray($errors);
+            self::assertCount(1, $errors, $query . ': ' . $response->getContent());
+            $error = $errors[0] ?? null;
+            self::assertIsArray($error);
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $query);
+            self::assertSame($detail, $error['detail'] ?? null, $query);
+            self::assertSame(['parameter' => 'filter[campaignDates]'], $error['source'] ?? null, $query);
+        }
+    }
+
+    #[Test]
     public function anIdFilterThroughAPathComparesTheReachedIdWithItsFormatAndEncoder(): void
     {
         self::assertSame(['1', '4'], $this->leadIds('filter[campaign]=' . ThroughFixtures::SPRING));
