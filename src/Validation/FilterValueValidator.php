@@ -9,6 +9,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Filter\AcceptsList;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\FilterMatcher;
+use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\WhereMorph;
 use haddowg\JsonApiBundle\DataProvider\FilterPaths;
 use Symfony\Component\Validator\Constraint;
@@ -79,7 +80,7 @@ final class FilterValueValidator
      * @param ?JsonApiRequestInterface $request  the request, which a filter family needs to resolve a key
      * @param ?FilterPaths             $paths    resolves a matched traversal filter's path, so a relationship leaf validates against the related id's format
      *
-     * @throws FilterValueInvalid when a client-supplied value violates its filter's constraints, or a list filter's value is not a list it accepts
+     * @throws FilterValueInvalid when a client-supplied value violates its filter's constraints, a list filter's value is not a list it accepts, or a range's value is not an object of single-valued bounds
      */
     public function validate(array $requested, array $filters, ?JsonApiRequestInterface $request = null, ?FilterPaths $paths = null): void
     {
@@ -88,6 +89,11 @@ final class FilterValueValidator
             $filter = FilterMatcher::match($filters, $key, $request);
             if ($filter === null) {
                 continue;
+            }
+            // Core's directives() makes the same check later; running it first keeps a
+            // malformed range value from reaching the per-bound constraints below.
+            if ($filter instanceof Range) {
+                $filter->bounds($value);
             }
             $filter = $paths?->resolve($filter) ?? $filter;
 
@@ -205,7 +211,7 @@ final class FilterValueValidator
         // scalar or an IN-style set: validate each PRESENT bound individually so a
         // blank/absent bound (open-ended) is not validated and a malformed present
         // bound is rejected against the range's per-bound constraints.
-        if ($filter instanceof \haddowg\JsonApi\Resource\Filter\Range) {
+        if ($filter instanceof Range) {
             return $this->rangeMembers($value);
         }
 

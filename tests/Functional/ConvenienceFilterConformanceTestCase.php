@@ -187,6 +187,33 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aMalformedRangeValueIsOneErrorWithTheRangesOwnMessage(): void
+    {
+        $malformed = [
+            'filter[publishedRange][min][]=2026-10-01T00:00:00Z' => ['publishedRange', 'filter[publishedRange][min] takes a single value.'],
+            'filter[publishedRange][max][]=x' => ['publishedRange', 'filter[publishedRange][max] takes a single value.'],
+            'filter[publishedRange]=2026-10-01T00:00:00Z' => ['publishedRange', 'Send the bounds as filter[publishedRange][min]=<value>, filter[publishedRange][max]=<value> or both.'],
+            'filter[publishedRange][after]=x' => ['publishedRange', 'filter[publishedRange] takes only the members min and max.'],
+            'filter[idRange][min][]=x' => ['idRange', 'filter[idRange][min] takes a single value.'],
+        ];
+
+        foreach ($malformed as $query => [$key, $detail]) {
+            $response = $this->handle('/articles?' . $query);
+
+            self::assertSame(400, $response->getStatusCode(), $query . ': ' . $response->getContent());
+            $errors = $this->decode($response)['errors'] ?? null;
+            self::assertIsArray($errors, $query);
+            self::assertCount(1, $errors, $query . ': ' . $response->getContent());
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $query);
+            self::assertSame($detail, $error['detail'] ?? null, $query);
+            self::assertSame(['parameter' => 'filter[' . $key . ']'], $error['source'] ?? null, $query);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     public function anOrderedRangeBoundNeverMatchesANullColumnOnEitherProvider(): void
     {
         // An ordered comparison — and a Range bound is a `>=`/`<=` pair —
