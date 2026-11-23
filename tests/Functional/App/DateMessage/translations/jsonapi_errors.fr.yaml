@@ -1,0 +1,3 @@
+FILTER_VALUE_INVALID:
+    date:
+        detail: "Cette valeur n'est pas une date comme {example}."

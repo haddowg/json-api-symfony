@@ -13,11 +13,14 @@ use haddowg\JsonApi\Resource\Field\Obj;
 use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Resource\Filter\DateRange;
+use haddowg\JsonApi\Resource\Filter\Where;
+use haddowg\JsonApi\Resource\Filter\WhereIn;
+use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 
 /**
  * A date-time, a date and a time each with and without a declared example, a time in
  * its offsetless default format, a date nested in an object, a union and an open object's
- * members, and date ranges over them,
+ * members, and date ranges and comparison and list filters over them,
  * to show every bad date reads as its kind's one message.
  */
 abstract class BaseBookingResource extends AbstractResource
@@ -47,6 +50,12 @@ abstract class BaseBookingResource extends AbstractResource
             DateRange::make('startsRange', 'startsAt'),
             DateRange::make('dayRange', 'day'),
             DateRange::make('endsRange', 'endsAt')->example(['min' => '2026-01-01T00:00:00Z', 'max' => '2026-12-31T23:59:59Z']),
+            Where::make('startsAt'),
+            Where::make('startsAfter', 'startsAt', '>'),
+            WhereIn::make('days', 'day'),
+            WhereNotIn::make('notDueOn', 'dueOn'),
+            Where::make('opensAt'),
+            Where::make('breakAt'),
         ];
     }
 }

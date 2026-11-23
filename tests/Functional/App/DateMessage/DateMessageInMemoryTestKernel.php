@@ -57,6 +57,13 @@ final class DateMessageInMemoryTestKernel extends Kernel
             'handle_all_throwables' => true,
             'php_errors' => ['log' => true],
             'router' => ['utf8' => true],
+            // French, with one key overridden, so a date filter bound shows a translation.
+            'default_locale' => 'fr',
+            'translator' => [
+                'enabled' => true,
+                'default_path' => __DIR__ . '/translations',
+                'fallbacks' => ['en'],
+            ],
         ]);
         PinnedConfigDefaults::apply($container, $builder);
 

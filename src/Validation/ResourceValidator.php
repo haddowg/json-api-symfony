@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Validation;
 
+use haddowg\JsonApi\Exception\AttributeValueInvalid;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\OpenApi\Schema;
@@ -20,6 +21,7 @@ use haddowg\JsonApi\Resource\Constraint\Nullable;
 use haddowg\JsonApi\Resource\Constraint\Required;
 use haddowg\JsonApi\Resource\Constraint\Shape;
 use haddowg\JsonApi\Resource\Constraint\When;
+use haddowg\JsonApi\Resource\DateMessage;
 use haddowg\JsonApi\Resource\DateTimeParser;
 use haddowg\JsonApi\Resource\Field\ArrayList;
 use haddowg\JsonApi\Resource\Field\DateTime;
@@ -466,16 +468,7 @@ final class ResourceValidator
             return $error;
         }
 
-        return new Error(
-            id: $error->id,
-            status: $error->status,
-            code: $error->code,
-            title: $error->title,
-            detail: $error->detail,
-            source: ErrorSource::fromPointer($to . \substr($pointer, \strlen($from))),
-            links: $error->links,
-            meta: $error->meta,
-        );
+        return $error->withSource(ErrorSource::fromPointer($to . \substr($pointer, \strlen($from))));
     }
 
     /**
@@ -1481,9 +1474,14 @@ final class ResourceValidator
 
     private function errorAt(string $detail, string $pointer): Error
     {
+        // A date the cast refused keeps its translation key and example.
+        $date = DateMessage::recognise($detail);
+
         return ValidationFailed::describe()->toError(
             detail: $detail,
+            context: $date?->context() ?? [],
             source: ErrorSource::fromPointer($pointer),
+            detailVariant: $date?->detailVariant(AttributeValueInvalid::describe()->code) ?? '',
         );
     }
 

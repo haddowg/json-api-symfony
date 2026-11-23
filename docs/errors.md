@@ -619,6 +619,34 @@ the validator's `422` `VALIDATION_FAILED` title (arm 1) localizes through the ve
 domain. Without `symfony/translation` the seam is inert and errors render in English
 exactly as before.
 
+### Date messages
+
+A value that is not the date it should be, whether a temporal attribute on a write or a date
+filter's bound or value, has one message per kind of date, such as `This value is not a date
+like 2026-10-01.` Its `source` says which value it was. Each kind has its own key below the
+error's code, nested beside the code's `detail`, and its `{example}` placeholder holds the
+field's or filter's declared example, or a fixed one:
+
+```yaml
+# translations/jsonapi_errors.fr.yaml
+ATTRIBUTE_VALUE_INVALID:
+    date_time:
+        detail: "Cette valeur n'est pas une date-heure RFC 3339 avec décalage, comme {example}."
+    date:
+        detail: "Cette valeur n'est pas une date comme {example}."
+    time:
+        detail: "Cette valeur n'est pas une heure comme {example}."
+    formatted_date_time:
+        detail: "Cette valeur n'est pas une date-heure comme {example}."
+FILTER_VALUE_INVALID:
+    date:
+        detail: "Cette valeur n'est pas une date comme {example}."
+```
+
+A missing kind falls back to the code's own `detail` and then to the English default, so an
+existing `ATTRIBUTE_VALUE_INVALID.detail` translation still applies. A date in a write's typed
+`meta` is a `VALIDATION_FAILED` error and still uses the `ATTRIBUTE_VALUE_INVALID` keys.
+
 ## Next / see also
 
 - [lifecycle](lifecycle.md) — the success path this listener mirrors:

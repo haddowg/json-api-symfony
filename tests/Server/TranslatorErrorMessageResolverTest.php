@@ -36,6 +36,18 @@ final class TranslatorErrorMessageResolverTest extends TestCase
     }
 
     #[Test]
+    public function itResolvesADetailVariantNestedBesideTheCodesDetail(): void
+    {
+        $resolver = new TranslatorErrorMessageResolver($this->translator([
+            'ATTRIBUTE_VALUE_INVALID.date.detail' => "Cette valeur n'est pas une date comme {example}.",
+        ]));
+
+        self::assertSame("Cette valeur n'est pas une date comme {example}.", $resolver->detailVariant('ATTRIBUTE_VALUE_INVALID.date'));
+        self::assertNull($resolver->detailVariant('ATTRIBUTE_VALUE_INVALID.time'));
+        self::assertNull($resolver->detail('ATTRIBUTE_VALUE_INVALID'));
+    }
+
+    #[Test]
     public function aMissingKeyResolvesToNullSoTheDefaultIsKeptPerSlot(): void
     {
         $resolver = new TranslatorErrorMessageResolver($this->translator([

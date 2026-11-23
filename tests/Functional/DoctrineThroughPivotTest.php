@@ -181,7 +181,7 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
-    public function aBadBoundThroughAPivotNamesItsParameterInTheDateMessage(): void
+    public function aBadBoundThroughAPivotIsRefusedWithTheDateMessage(): void
     {
         foreach (['/tpAlbums?filter[addedAt][min]=yesterday', '/tpTracks/1/playlists?filter[addedAt][min]=yesterday'] as $path) {
             $response = $this->handle($path);
@@ -192,7 +192,7 @@ final class DoctrineThroughPivotTest extends JsonApiFunctionalTestCase
             $error = $errors[0] ?? null;
             self::assertIsArray($error);
             self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $path);
-            self::assertSame('filter[addedAt][min] is not an RFC 3339 date-time with an offset, such as 2026-10-01T00:00:00Z.', $error['detail'] ?? null, $path);
+            self::assertSame('This value is not an RFC 3339 date-time with an offset, such as 2026-10-01T00:00:00Z.', $error['detail'] ?? null, $path);
             self::assertSame(['parameter' => 'filter[addedAt]'], $error['source'] ?? null, $path);
         }
     }
