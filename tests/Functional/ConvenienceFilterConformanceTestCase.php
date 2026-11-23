@@ -162,6 +162,31 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function aRangeRefusesAValueThatIsNotAnObjectOfItsBounds(): void
+    {
+        $malformed = [
+            'filter[idRange]=3' => 'filter[idRange]',
+            'filter[idRange][from]=3' => 'filter[idRange]',
+            'filter[idRange][min][]=3' => 'filter[idRange]',
+            'filter[publishedRange]=2026-10-01T00:00:00Z' => 'filter[publishedRange]',
+            'filter[publishedRange][after]=2026-10-01T00:00:00Z' => 'filter[publishedRange]',
+            'filter[publishedRange][min]=2026-10-01T00:00:00Z&filter[publishedRange][before]=2026-11-01T00:00:00Z' => 'filter[publishedRange]',
+        ];
+
+        foreach ($malformed as $query => $parameter) {
+            $response = $this->handle('/articles?' . $query);
+
+            self::assertSame(400, $response->getStatusCode(), $query . ': ' . $response->getContent());
+
+            $error = $this->firstError($this->decode($response));
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $query);
+            self::assertSame(['parameter' => $parameter], $error['source'] ?? null, $query);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     public function anOrderedRangeBoundNeverMatchesANullColumnOnEitherProvider(): void
     {
         // An ordered comparison — and a Range bound is a `>=`/`<=` pair —
