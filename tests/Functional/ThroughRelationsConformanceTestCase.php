@@ -66,6 +66,8 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
             'filter[campaignDates][min][]=2026-03-01' => 'filter[campaignDates][min] takes a single value.',
             'filter[campaignDates]=2026-03-01' => 'Send the bounds as filter[campaignDates][min]=<value>, filter[campaignDates][max]=<value> or both.',
             'filter[campaignDates][after]=2026-03-01' => 'filter[campaignDates] takes only the members min and max.',
+            'filter[campaignDates][min]=2026-13-45' => null,
+            'filter[campaignDates][min]=2026-02-30' => null,
         ];
 
         foreach ($malformed as $query => $detail) {
@@ -77,7 +79,9 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
             $error = $errors[0] ?? null;
             self::assertIsArray($error);
             self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $query);
-            self::assertSame($detail, $error['detail'] ?? null, $query);
+            if ($detail !== null) {
+                self::assertSame($detail, $error['detail'] ?? null, $query);
+            }
             self::assertSame(['parameter' => 'filter[campaignDates]'], $error['source'] ?? null, $query);
         }
     }

@@ -114,17 +114,15 @@ final class FilterValueValidator
             }
 
             $messages = [];
-            foreach ($members ?? $this->members($filter, $value) as $member) {
-                foreach ($this->validator->validate($member, $constraints) as $violation) {
-                    $messages[] = (string) $violation->getMessage();
+            if ($filter instanceof Range) {
+                $messages = $this->boundMessages($filter, $value, $constraints);
+            } else {
+                foreach ($members ?? $this->members($filter, $value) as $member) {
+                    foreach ($this->validator->validate($member, $constraints) as $violation) {
+                        $messages[] = (string) $violation->getMessage();
+                    }
                 }
             }
-
-            // A DateRange's shape `Pattern` is deliberately lenient on the calendar
-            // (it admits `1997-13-99`), so a present bound is additionally checked for
-            // temporal validity — an unparseable date is a clean 400 here rather than
-            // a silent, provider-divergent non-match in the data layer.
-            $messages = [...$messages, ...$this->dateRangeMessages($filter, $value)];
 
             if ($messages !== []) {
                 throw new FilterValueInvalid($key, $messages);
@@ -207,14 +205,6 @@ final class FilterValueValidator
      */
     private function members(FilterInterface $filter, mixed $value): array
     {
-        // A structured Range/DateRange carries a nested {min?, max?} value, not a
-        // scalar or an IN-style set: validate each PRESENT bound individually so a
-        // blank/absent bound (open-ended) is not validated and a malformed present
-        // bound is rejected against the range's per-bound constraints.
-        if ($filter instanceof Range) {
-            return $this->rangeMembers($value);
-        }
-
         if (\is_array($value)) {
             return \array_values(\array_filter($value, static fn(mixed $member): bool => $member !== null));
         }
@@ -269,33 +259,30 @@ final class FilterValueValidator
     }
 
     /**
-     * Temporal-validity messages for a {@see \haddowg\JsonApi\Resource\Filter\DateRange}'s
-     * present bounds. The range's shape `Pattern` is deliberately lenient on the
-     * calendar (a regex cannot reject `1997-13-99` — month 13, day 99), so each
-     * present bound is additionally run through the filter's own date deserializer
-     * (the exact coercion the handlers apply); a bound that does not coerce to a
-     * `\DateTimeInterface` is a calendar-invalid date and yields one message, so the
-     * request is a clean `400` rather than a silent, provider-divergent non-match.
-     * A non-`DateRange` filter (a numeric {@see \haddowg\JsonApi\Resource\Filter\Range}
-     * or any scalar filter) contributes nothing — its shape `Pattern` is already a
-     * complete check.
+     * One message per failing bound of a {@see Range}: the first constraint that rejects
+     * the bound, or for a {@see \haddowg\JsonApi\Resource\Filter\DateRange} whose
+     * bound passes them, a date that does not exist. The range's shape `Pattern` is
+     * lenient on the calendar (it admits `1997-13-99`), so a bound is also run through
+     * the filter's own date deserializer, the coercion the handlers apply, making an
+     * impossible date a clean 400 rather than a provider-divergent non-match.
+     *
+     * @param list<Constraint> $constraints
      *
      * @return list<string>
      */
-    private function dateRangeMessages(FilterInterface $filter, mixed $value): array
+    private function boundMessages(Range $filter, mixed $value, array $constraints): array
     {
-        if (!$filter instanceof \haddowg\JsonApi\Resource\Filter\DateRange) {
-            return [];
-        }
-
-        $deserialize = $filter->deserialize;
-        if ($deserialize === null) {
-            return [];
-        }
+        $deserialize = $filter instanceof \haddowg\JsonApi\Resource\Filter\DateRange ? $filter->deserialize : null;
 
         $messages = [];
         foreach ($this->rangeMembers($value) as $bound) {
-            if (!$deserialize($bound) instanceof \DateTimeInterface) {
+            foreach ($this->validator->validate($bound, $constraints) as $violation) {
+                $messages[] = (string) $violation->getMessage();
+
+                continue 2;
+            }
+
+            if ($deserialize !== null && !$deserialize($bound) instanceof \DateTimeInterface) {
                 $messages[] = 'This value is not a valid date.';
             }
         }

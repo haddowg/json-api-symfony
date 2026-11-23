@@ -214,6 +214,33 @@ abstract class ConvenienceFilterConformanceTestCase extends JsonApiFunctionalTes
 
     #[Test]
     #[Group('spec:fetching-filtering')]
+    #[Group('spec:errors')]
+    public function eachFailingRangeBoundIsOneError(): void
+    {
+        $cases = [
+            'filter[publishedRange][min]=2026-13-45T00:00:00Z' => 1,
+            'filter[publishedRange][min]=2026-02-30T00:00:00Z' => 1,
+            'filter[publishedRange][min]=banana' => 1,
+            'filter[publishedRange][min]=banana&filter[publishedRange][max]=2026-02-30T00:00:00Z' => 2,
+            'filter[idRange][min]=banana' => 1,
+        ];
+
+        foreach ($cases as $query => $count) {
+            $response = $this->handle('/articles?' . $query);
+
+            self::assertSame(400, $response->getStatusCode(), $query . ': ' . $response->getContent());
+            $errors = $this->decode($response)['errors'] ?? null;
+            self::assertIsArray($errors, $query);
+            self::assertCount($count, $errors, $query . ': ' . $response->getContent());
+            foreach ($errors as $error) {
+                self::assertIsArray($error);
+                self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $query);
+            }
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-filtering')]
     public function anOrderedRangeBoundNeverMatchesANullColumnOnEitherProvider(): void
     {
         // An ordered comparison — and a Range bound is a `>=`/`<=` pair —
