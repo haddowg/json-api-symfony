@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Server;
 
+use haddowg\JsonApi\Schema\Error\ErrorDetailVariantResolverInterface;
 use haddowg\JsonApi\Schema\Error\ErrorMessageResolverInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -28,8 +29,15 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * tokens, not Symfony `%name%` parameters (no parameters are passed to the translator,
  * which therefore leaves the tokens intact). The locale is the translator's current
  * request locale, so `Accept-Language` negotiation stays the framework's job.
+ *
+ * A date message is keyed below its code by kind, such as
+ * `ATTRIBUTE_VALUE_INVALID.date.detail`, and fills an `{example}` token:
+ *
+ *     ATTRIBUTE_VALUE_INVALID:
+ *         date:
+ *             detail: "Ce n'est pas une date comme {example}."
  */
-final readonly class TranslatorErrorMessageResolver implements ErrorMessageResolverInterface
+final readonly class TranslatorErrorMessageResolver implements ErrorDetailVariantResolverInterface
 {
     public const DOMAIN = 'jsonapi_errors';
 
@@ -43,6 +51,16 @@ final readonly class TranslatorErrorMessageResolver implements ErrorMessageResol
     public function detail(string $code): ?string
     {
         return $this->resolve($code . '.detail');
+    }
+
+    /**
+     * A more specific detail, such as a date message's, under `<CODE>.<variant>.detail`:
+     * `ATTRIBUTE_VALUE_INVALID.date_time.detail` for the variant
+     * `ATTRIBUTE_VALUE_INVALID.date_time`, so it nests beside the code's own `detail`.
+     */
+    public function detailVariant(string $variant): ?string
+    {
+        return $this->resolve($variant . '.detail');
     }
 
     private function resolve(string $id): ?string

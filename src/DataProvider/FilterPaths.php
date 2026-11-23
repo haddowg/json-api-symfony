@@ -89,6 +89,16 @@ final readonly class FilterPaths
     }
 
     /**
+     * The inventory of the type the filters run against.
+     *
+     * @return list<FieldInterface>
+     */
+    public function fields(): array
+    {
+        return $this->fields;
+    }
+
+    /**
      * The relation the filters run under, as the type declaring it holds it, on a
      * relation's reads.
      */

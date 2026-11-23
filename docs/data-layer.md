@@ -656,7 +656,19 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
   not `400`). A `DateRange` bound is additionally checked for **temporal validity**: a
   value that is shape-valid RFC 3339 but not a real date (`1997-13-99T00:00:00Z`, month
   13 and day 99, which a regex cannot reject) is a clean `400`, so a calendar-invalid bound never
-  reaches the data layer where it would compare divergently across providers.
+  reaches the data layer where it would compare divergently across providers. Each bad
+  bound is one error, and its `detail` is core's message for the date the range takes,
+  such as `This value is not a date like 2026-10-01.` over calendar days, with its
+  `source.parameter` naming the filter and the range's declared example when it has one.
+- a `Where` comparing with an equality or ordering operator, a `WhereIn` and a `WhereNotIn`
+  over a `DateTime`, `Date` or `Time` field, of the type or reached with `->through()`, read
+  each value or member as that field's date when they declare no constraints of their own,
+  so a malformed one is a `400` with the same message, one error per value. A good one is
+  read as that field's date: Doctrine binds it as the column's date type, member by member for
+  a list, and the in-memory provider compares a date by its day, a time by its time of day and
+  a date-time as an instant, so both match the same rows. A bad date
+  attribute on a write reads the same way, at its `source.pointer`. The messages are
+  translatable, see [date messages](errors.md#date-messages).
 
 See core's filter docs for the full decision.
 

@@ -116,7 +116,12 @@ final class RequestMetaResolver
             try {
                 $field->castWireValue($value);
             } catch (\haddowg\JsonApi\Exception\AttributeValueInvalid $invalid) {
-                $errors[] = ValidationFailed::describe()->toError(detail: $invalid->reason, source: ErrorSource::fromPointer($pointer . '/' . $invalid->attribute));
+                $errors[] = ValidationFailed::describe()->toError(
+                    detail: $invalid->reason,
+                    context: $invalid->date?->context() ?? [],
+                    source: ErrorSource::fromPointer($pointer . '/' . $invalid->attribute),
+                    detailVariant: $invalid->date?->detailVariant(\haddowg\JsonApi\Exception\AttributeValueInvalid::describe()->code) ?? '',
+                );
             }
         }
 

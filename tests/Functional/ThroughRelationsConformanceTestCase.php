@@ -87,6 +87,35 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
     }
 
     #[Test]
+    public function aBadDateThroughAPathIsRefusedWithTheDateMessage(): void
+    {
+        $cases = [
+            'filter[campaignDates][min]=2026-03-01T00:00:00Z' => 'campaignDates',
+            'filter[campaignDates][max]=2026-02-30' => 'campaignDates',
+            'filter[campaignDates][min]=spring' => 'campaignDates',
+            'filter[campaignStart]=2026-03-02T00:00:00Z' => 'campaignStart',
+            'filter[campaignStarts]=2026-03-02,2026-02-30' => 'campaignStarts',
+        ];
+
+        foreach ($cases as $query => $key) {
+            $response = $this->handle('/thrLeads?' . $query);
+            self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+            $errors = $this->decode($response)['errors'] ?? null;
+            self::assertIsArray($errors);
+            self::assertCount(1, $errors, $query . ': ' . $response->getContent());
+            $error = $errors[0] ?? null;
+            self::assertIsArray($error);
+            self::assertSame('FILTER_VALUE_INVALID', $error['code'] ?? null, $query);
+            self::assertSame('This value is not a date like 2026-10-01.', $error['detail'] ?? null, $query);
+            self::assertSame(['parameter' => 'filter[' . $key . ']'], $error['source'] ?? null, $query);
+        }
+
+        // A related date compares as a date on every data layer.
+        self::assertSame(['1', '4'], $this->leadIds('filter[campaignStart]=2026-03-02'));
+        self::assertSame(['1', '2', '4'], $this->leadIds('filter[campaignStarts]=2026-03-02,2026-06-15'));
+    }
+
+    #[Test]
     public function anIdFilterThroughAPathComparesTheReachedIdWithItsFormatAndEncoder(): void
     {
         self::assertSame(['1', '4'], $this->leadIds('filter[campaign]=' . ThroughFixtures::SPRING));
