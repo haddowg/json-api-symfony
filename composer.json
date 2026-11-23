@@ -56,18 +56,19 @@
         "symfony/security-core": "^6.4 || ^7.0 || ^8.0",
         "symfony/translation": "^6.4 || ^7.0 || ^8.0",
         "symfony/uid": "^6.4 || ^7.0 || ^8.0",
-        "symfony/validator": "^6.4 || ^7.0 || ^8.0",
+        "symfony/validator": "^6.4.4 || ^7.0.4 || ^8.0",
         "symfony/var-exporter": "^6.4 || ^7.0 || ^8.0",
         "symfony/yaml": "^6.4 || ^7.0 || ^8.0",
         "zenstruck/foundry": "^2.10"
     },
     "conflict": {
         "doctrine/dbal": "<3.6",
-        "doctrine/orm": "<2.20 || >=3.0,<3.2 || >=4.0"
+        "doctrine/orm": "<2.20 || >=3.0,<3.2 || >=4.0",
+        "symfony/validator": "<6.4.4 || >=7.0,<7.0.4"
     },
     "suggest": {
         "doctrine/orm": "Enables the reference Doctrine data provider/persister for zero-handler CRUD endpoints (^2.20 || ^3.2).",
-        "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4 || ^7.0 || ^8.0).",
+        "symfony/validator": "Enables translating JSON:API resource constraints into Symfony Validator rules for create/update validation (^6.4.4 || ^7.0.4 || ^8.0).",
         "symfony/security-core": "Required to declare security expressions (on #[AsJsonApiResource], relations or #[AsJsonApiAction]); they are evaluated at the lifecycle hooks via the AuthorizationChecker, and the build fails if one is declared without it (^6.4 || ^7.0 || ^8.0).",
         "symfony/expression-language": "Required to declare security expressions; the build fails if one is declared without it (^6.4 || ^7.0 || ^8.0).",
         "symfony/doctrine-bridge": "Enables the UniqueEntity entity-level constraint (it ships Symfony's UniqueEntity constraint + validator); without it UniqueEntity cannot be translated (^6.4 || ^7.0 || ^8.0).",
