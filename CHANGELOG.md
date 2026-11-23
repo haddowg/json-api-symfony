@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.22.1](https://github.com/haddowg/json-api-symfony/compare/v2.22.0...v2.22.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* compare the Doctrine identifier when an id filter or sort reaches an entity keyed by an association ([#434](https://github.com/haddowg/json-api-symfony/issues/434)) ([2a7d062](https://github.com/haddowg/json-api-symfony/commit/2a7d06289c43e37c0d55b5b4784a88168181e1de))
+* refuse a range filter value that is not an object of its bounds ([#435](https://github.com/haddowg/json-api-symfony/issues/435)) ([8bd6ff8](https://github.com/haddowg/json-api-symfony/commit/8bd6ff87232022d8e0028f3dde5d77380e3659dd))
+
 ## [2.22.0](https://github.com/haddowg/json-api-symfony/compare/v2.21.1...v2.22.0) (2026-11-21)
 
 
