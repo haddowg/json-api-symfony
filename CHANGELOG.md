@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.22.2](https://github.com/haddowg/json-api-symfony/compare/v2.22.1...v2.22.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* answer a malformed range filter value with the range's own single error ([#438](https://github.com/haddowg/json-api-symfony/issues/438)) ([5557e72](https://github.com/haddowg/json-api-symfony/commit/5557e729b31ebfd13eef4dcb4c046c7259b8f3f8))
+* require a symfony/validator release that reads option-named fields as fields ([#437](https://github.com/haddowg/json-api-symfony/issues/437)) ([a59991d](https://github.com/haddowg/json-api-symfony/commit/a59991d8649506fae10386524ac795cddd92b3d1))
+
 ## [2.22.1](https://github.com/haddowg/json-api-symfony/compare/v2.22.0...v2.22.1) (2026-11-23)
 
 
