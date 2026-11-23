@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.23.0](https://github.com/haddowg/json-api-symfony/compare/v2.22.2...v2.23.0) (2026-11-23)
+
+
+### Features
+
+* report every bad date with core's translatable message for its kind ([#439](https://github.com/haddowg/json-api-symfony/issues/439)) ([f5a6d8f](https://github.com/haddowg/json-api-symfony/commit/f5a6d8f4d09d0b95651f97b6c74cdfb122dae8a4))
+
 ## [2.22.2](https://github.com/haddowg/json-api-symfony/compare/v2.22.1...v2.22.2) (2026-11-23)
 
 
