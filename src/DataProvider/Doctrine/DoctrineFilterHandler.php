@@ -1425,7 +1425,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         if ($value instanceof \DateTimeInterface) {
-            return $metadata->hasField($field) ? $this->dates->parameter($value, $metadata->getTypeOfField($field)) : [$value, null];
+            return $metadata->hasField($field) ? $this->dateParameter($value, $metadata->getTypeOfField($field)) : [$value, null];
         }
 
         $target = $this->associationTarget($query, $metadata, $field);
@@ -1449,6 +1449,23 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
+     * A date bound to a column of DBAL type `$type`: a date-time as
+     * {@see NaiveDateTimeStorage::parameter()} stores it, and a date or time of any other
+     * date type with that type, in the PHP class it converts.
+     *
+     * @return array{mixed, ?string}
+     */
+    private function dateParameter(mixed $value, ?string $type): array
+    {
+        [$bound, $typeName] = $this->dates->parameter($value, $type);
+        if ($typeName !== null || !$bound instanceof \DateTimeInterface || $type === null || !\str_contains($type, 'time') && !\str_contains($type, 'date')) {
+            return [$bound, $typeName];
+        }
+
+        return [\str_ends_with($type, '_immutable') ? \DateTimeImmutable::createFromInterface($bound) : \DateTime::createFromInterface($bound), $type];
+    }
+
+    /**
      * The values and DBAL array type to bind a list compared against `$field` of
      * `$metadata` with, each converted as {@see parameter()} converts one. A value the
      * column's type cannot convert is dropped, since it can match no row.
@@ -1462,6 +1479,18 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     {
         if ($metadata === null) {
             return [$values, null];
+        }
+
+        // A date filter's members bind as the column's date type converts them.
+        if ($metadata->hasField($field) && \array_filter($values, static fn(mixed $value): bool => $value instanceof \DateTimeInterface) !== []) {
+            $platform = $query->getEntityManager()->getConnection()->getDatabasePlatform();
+            $converted = [];
+            foreach ($values as $value) {
+                [$bound, $typeName] = $this->dateParameter($value, $metadata->getTypeOfField($field));
+                $converted[] = $typeName === null ? $bound : Type::getType($typeName)->convertToDatabaseValue($bound, $platform);
+            }
+
+            return [$converted, \Doctrine\DBAL\ArrayParameterType::STRING];
         }
 
         $ids = new DoctrineIdentifiers($query->getEntityManager());

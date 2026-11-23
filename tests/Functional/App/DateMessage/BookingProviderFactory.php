@@ -13,7 +13,10 @@ final class BookingProviderFactory
     {
         return new InMemoryDataProvider(
             'bookings',
-            ['1' => new Booking(1, new \DateTimeImmutable('2026-10-01T09:00:00Z'), null, new \DateTimeImmutable('2026-10-01'))],
+            [
+                '1' => new Booking(1, new \DateTimeImmutable('2026-10-01T09:00:00Z'), null, new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-12-24'), breakAt: new \DateTimeImmutable('12:30:00')),
+                '2' => new Booking(2, new \DateTimeImmutable('2026-10-02T15:00:00Z'), null, new \DateTimeImmutable('2026-10-02'), new \DateTimeImmutable('2026-12-31'), breakAt: new \DateTimeImmutable('14:00:00')),
+            ],
             static function (object $item): string {
                 \assert($item instanceof Booking);
 

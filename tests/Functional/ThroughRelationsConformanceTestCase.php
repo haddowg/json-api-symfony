@@ -110,7 +110,9 @@ abstract class ThroughRelationsConformanceTestCase extends JsonApiFunctionalTest
             self::assertSame(['parameter' => 'filter[' . $key . ']'], $error['source'] ?? null, $query);
         }
 
-        self::assertSame(200, $this->handle('/thrLeads?filter[campaignStart]=2026-03-02&filter[campaignStarts]=2026-03-02,2026-06-15')->getStatusCode());
+        // A related date compares as a date on every data layer.
+        self::assertSame(['1', '4'], $this->leadIds('filter[campaignStart]=2026-03-02'));
+        self::assertSame(['1', '2', '4'], $this->leadIds('filter[campaignStarts]=2026-03-02,2026-06-15'));
     }
 
     #[Test]

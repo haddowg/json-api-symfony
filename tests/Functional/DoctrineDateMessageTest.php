@@ -21,7 +21,8 @@ final class DoctrineDateMessageTest extends DateMessageConformanceTestCase
         $entityManager = $this->entityManager();
         (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
 
-        $entityManager->persist(new BookingEntity(startsAt: new \DateTimeImmutable('2026-10-01T09:00:00Z'), day: new \DateTimeImmutable('2026-10-01')));
+        $entityManager->persist(new BookingEntity(startsAt: new \DateTimeImmutable('2026-10-01T09:00:00Z'), day: new \DateTimeImmutable('2026-10-01'), dueOn: new \DateTimeImmutable('2026-12-24'), breakAt: new \DateTimeImmutable('12:30:00')));
+        $entityManager->persist(new BookingEntity(startsAt: new \DateTimeImmutable('2026-10-02T15:00:00Z'), day: new \DateTimeImmutable('2026-10-02'), dueOn: new \DateTimeImmutable('2026-12-31'), breakAt: new \DateTimeImmutable('14:00:00')));
         $entityManager->flush();
         $entityManager->clear();
     }

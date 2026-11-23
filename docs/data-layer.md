@@ -663,7 +663,10 @@ Mechanics, all decided in the handler before the `CollectionCriteria` is built:
 - a `Where` comparing with an equality or ordering operator, a `WhereIn` and a `WhereNotIn`
   over a `DateTime`, `Date` or `Time` field, of the type or reached with `->through()`, read
   each value or member as that field's date when they declare no constraints of their own,
-  so a malformed one is a `400` with the same message, one error per value. A bad date
+  so a malformed one is a `400` with the same message, one error per value. A good one is
+  read as that field's date: Doctrine binds it as the column's date type, member by member for
+  a list, and the in-memory provider compares a date by its day, a time by its time of day and
+  a date-time as an instant, so both match the same rows. A bad date
   attribute on a write reads the same way, at its `source.pointer`. The messages are
   translatable, see [date messages](errors.md#date-messages).
 

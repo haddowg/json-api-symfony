@@ -130,20 +130,43 @@ abstract class DateMessageConformanceTestCase extends JsonApiFunctionalTestCase
         }
     }
 
+    /**
+     * Each good date filter and the bookings it matches. Booking 1 starts at 09:00Z on
+     * 1 October, is due on 24 December and breaks at 12:30. Booking 2 starts at 15:00Z on
+     * 2 October, is due on 31 December and breaks at 14:00. Both data layers compare the
+     * values as dates, so they return the same rows.
+     *
+     * @return array<string, list<string>>
+     */
+    private static function goodFilters(): array
+    {
+        return [
+            'filter[startsRange][min]=2026-10-01T12:00:00Z' => ['2'],
+            'filter[dayRange][max]=2026-10-01' => ['1'],
+            'filter[startsAt]=2026-10-01T09:00:00Z' => ['1'],
+            'filter[startsAt]=2026-10-01T11:00:00%2B02:00' => ['1'],
+            'filter[startsAfter]=2026-10-01T12:00:00Z' => ['2'],
+            'filter[startsAfter]=2026-09-30T00:00:00Z' => ['1', '2'],
+            'filter[days]=2026-10-02' => ['2'],
+            'filter[days]=2026-10-01,2026-10-02' => ['1', '2'],
+            'filter[notDueOn]=2026-12-24' => ['2'],
+            'filter[breakAt]=12:30:00' => ['1'],
+        ];
+    }
+
     #[Test]
     #[Group('spec:fetching-filtering')]
-    public function goodDateFilterValuesStillFilter(): void
+    public function goodDateFilterValuesMatchTheSameRowsOnEveryDataLayer(): void
     {
-        foreach ([
-            'filter[startsRange][min]=2026-09-30T00:00:00Z&filter[dayRange][max]=2026-10-01',
-            'filter[startsAt]=2026-10-01T09:00:00Z',
-            'filter[startsAfter]=2026-09-30T00:00:00Z',
-            'filter[days]=2026-10-01,2026-10-02',
-            'filter[breakAt]=12:30:00',
-        ] as $query) {
+        foreach (self::goodFilters() as $query => $ids) {
             $response = $this->handle('/bookings?' . $query);
 
             self::assertSame(200, $response->getStatusCode(), $query . ': ' . $response->getContent());
+            $data = $this->decode($response)['data'] ?? null;
+            self::assertIsArray($data, $query);
+            $found = \array_map(static fn(mixed $row): mixed => \is_array($row) ? $row['id'] ?? null : null, $data);
+            \sort($found);
+            self::assertSame($ids, $found, $query);
         }
     }
 
