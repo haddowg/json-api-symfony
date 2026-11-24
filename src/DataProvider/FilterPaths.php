@@ -212,8 +212,17 @@ final readonly class FilterPaths
     }
 
     /**
-     * The storage keys among `$keys`, targets of `$type` stored by the polymorphic
-     * `$relation`, that the type's provider admits for the caller: none through a refused
+     * Whether {@see admitMorphTargets()} asks the targets' providers, rather than admitting
+     * every key for want of a way to ask or a request to ask for.
+     */
+    public function admitsMorphTargets(): bool
+    {
+        return $this->morphAdmission !== null && $this->request !== null;
+    }
+
+    /**
+     * The stored ids among `$keys`, each a storage key or a wire id, targets of `$type`
+     * stored by the polymorphic `$relation`, that the type's provider admits for the caller: none through a refused
      * relation, and all of them when no provider narrows them or there is no request to
      * narrow for.
      *

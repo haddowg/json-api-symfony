@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Types\ConversionException;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -18,6 +19,7 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
+use haddowg\JsonApi\Resource\Filter\MorphTarget;
 use haddowg\JsonApi\Resource\Filter\Range;
 use haddowg\JsonApi\Resource\Filter\RelationHop;
 use haddowg\JsonApi\Resource\Filter\ThroughPath;
@@ -129,6 +131,26 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * message when a custom filter reaches this Doctrine handler with no arm to run it —
      * naming the seam that would handle it, so the 500's message points at the fix.
      */
+    /**
+     * Doctrine types of an integer column a stored morph id or a target id may be kept in.
+     */
+    private const array INTEGER_ID_TYPES = ['integer', 'bigint', 'smallint'];
+
+    /**
+     * Doctrine types of a text column a stored morph id may be kept in.
+     */
+    private const array TEXT_ID_TYPES = ['string', 'ascii_string', 'text'];
+
+    private const string COMPARE_AS_STORED = 'stored';
+
+    private const string COMPARE_AS_UUID_TEXT = 'uuid_text';
+
+    /**
+     * How many admitted morph ids bind in one `IN` list, well under SQLite's 32766 and
+     * PostgreSQL's 65535 parameters per statement.
+     */
+    private static int $morphIdChunk = 2000;
+
     private const string ARM_HINT = 'To run a custom filter on the Doctrine provider, register a DoctrineFilterArmInterface (tag: json_api.doctrine_filter_arm) — see the "custom filters and sorts: the arm seam" section of the doctrine docs.';
 
     /**
@@ -326,17 +348,21 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * A {@see WhereMorph} compares the fields a relation declares for its stored
      * identifier: a `MorphTo`'s `identifiedByColumns()` on the row itself, and a
      * `MorphToMany`'s `identifiedByRows()` as one correlated `EXISTS` over its link rows.
-     * Warm-up refuses a relation declaring neither, so the throw here is a backstop.
+     * A stored id may hold the target's storage key or its wire id, so requested ids match
+     * either. Warm-up refuses a relation declaring neither, so the throw here is a backstop.
      */
     private function whereMorph(QueryBuilder $query, WhereMorph $filter, mixed $value, string $alias): QueryBuilder
     {
         $selection = $filter->selection($value);
-        $relation = $filter->resolvedTarget()?->relation;
+        $target = $filter->resolvedTarget();
+        $relation = $target?->relation;
+        $forms = $selection->ids !== null && $target !== null ? $target->storedForms($selection->type, $selection->ids) : $selection->ids;
 
         if ($relation instanceof MorphTo && ($columns = $relation->identifierColumns()) !== null) {
-            $this->morphPredicate($query, $query, $alias, $columns->type, $columns->storedValues($selection->type), $columns->id, $selection->ids);
+            $stored = $columns->storedValues($selection->type);
+            $this->morphPredicate($query, $query, $alias, $columns->type, $stored, $columns->id, $forms);
 
-            return $this->scopeMorph($query, $query, $alias, $columns->id, $relation, $selection->type);
+            return $this->scopeMorph($query, $query, $alias, $columns->type, $stored, $columns->id, $relation, $target, $selection->type, $forms);
         }
 
         if ($relation instanceof MorphToMany && ($rows = $relation->linkRowFields()) !== null) {
@@ -348,8 +374,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 ->select('1')
                 ->from($rows->through, $rowAlias)
                 ->where(\sprintf('%s.%s = %s', $rowAlias, $rows->owner, $alias));
-            $this->morphPredicate($query, $sub, $rowAlias, $rows->type, $rows->storedValues($selection->type), $rows->id, $selection->ids);
-            $this->scopeMorph($query, $sub, $rowAlias, $rows->id, $relation, $selection->type);
+            $stored = $rows->storedValues($selection->type);
+            $this->morphPredicate($query, $sub, $rowAlias, $rows->type, $stored, $rows->id, $forms);
+            $this->scopeMorph($query, $sub, $rowAlias, $rows->type, $stored, $rows->id, $relation, $target, $selection->type, $forms);
 
             return $query->andWhere($query->expr()->exists($sub->getDQL()));
         }
@@ -367,8 +394,17 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * so a target the scope hides never matches. Through a relation the caller may not
      * read it matches none. A type served by no entity this provider knows, or scoped by
      * no extension, is compared as stored.
+     *
+     * The stored ids are admitted as a related read admits them, through the type's id
+     * encoder and its id's Doctrine type: the requested ids when the request names some,
+     * otherwise the distinct ids of that type the column holds. Only a type whose id the
+     * column can hold exactly as its table does, with no encoder, is compared with a
+     * subquery of the admitted ids instead.
+     *
+     * @param list<string>     $storedTypes
+     * @param list<mixed>|null $forms the requested ids in both stored forms, `null` when the request names none
      */
-    private function scopeMorph(QueryBuilder $query, QueryBuilder $predicateOn, string $alias, string $idField, RelationInterface $relation, string $type): QueryBuilder
+    private function scopeMorph(QueryBuilder $query, QueryBuilder $predicateOn, string $alias, string $typeField, array $storedTypes, string $idField, RelationInterface $relation, ?MorphTarget $target, string $type, ?array $forms): QueryBuilder
     {
         $paths = $this->paths;
         if ($paths === null) {
@@ -384,9 +420,150 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             return $predicateOn;
         }
 
-        $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $query->getEntityManager()->getClassMetadata($class), $type, $extensions, $paths->request());
+        $metadata = $query->getEntityManager()->getClassMetadata($class);
+        $owner = $this->metadataOfAlias($predicateOn, $alias);
+        $comparison = $forms === null ? $this->sqlComparison($query, $owner, $idField, $metadata, $target, $type) : null;
+        if ($comparison !== null || !$paths->admitsMorphTargets()) {
+            $function = null;
+            if ($comparison === self::COMPARE_AS_UUID_TEXT) {
+                $configuration = $query->getEntityManager()->getConfiguration();
+                if ($configuration->getCustomStringFunction(UuidText::FUNCTION) === null) {
+                    $configuration->addCustomStringFunction(UuidText::FUNCTION, UuidTextFunction::class);
+                }
+                $function = UuidText::FUNCTION;
+            }
+            $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request(), $function);
 
-        return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $admitted));
+            return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $admitted));
+        }
+
+        $keys = $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField);
+        $admitted = $this->comparableIds($query, $owner, $idField, $paths->admitMorphTargets($relation, $type, $keys));
+        if ($admitted === []) {
+            return $predicateOn->andWhere('1 = 0');
+        }
+
+        // Bound in chunks, so a long list stays under the database's parameter limit.
+        $path = $this->path($idField, $alias);
+        $chunks = [];
+        foreach (\array_chunk($admitted, \max(1, self::$morphIdChunk)) as $chunk) {
+            $placeholder = $this->placeholder($query);
+            $query->setParameter($placeholder, ...$this->listParameter($query, $owner, $idField, $chunk));
+            $chunks[] = \sprintf('%s IN (:%s)', $path, $placeholder);
+        }
+
+        return $predicateOn->andWhere(\count($chunks) === 1 ? $chunks[0] : $query->expr()->orX(...$chunks));
+    }
+
+    /**
+     * Sets how many admitted ids bind in one `IN` list, for a test to force several.
+     *
+     * @internal
+     */
+    public static function chunkMorphIdsBy(int $size): void
+    {
+        self::$morphIdChunk = \max(1, $size);
+    }
+
+    /**
+     * How a stored morph id compares with the targets of `$type` in one SQL statement, or
+     * null when it can't, so the stored ids are admitted and bound instead. It needs a
+     * single id and no id encoder, so the storage key and the wire id are the same value.
+     * A morph column and a target id column of one family, both integers or both text,
+     * compare as they are. A text column against a uuid id compares with the id read as
+     * its canonical text where {@see UuidText} can write that. Any other pair, such as text
+     * against an integer, which PostgreSQL has no comparison for, can't.
+     *
+     * @param ClassMetadata<object>|null $owner  the entity holding the morph id
+     * @param ClassMetadata<object>      $target the entity serving `$type`
+     */
+    private function sqlComparison(QueryBuilder $query, ?ClassMetadata $owner, string $idField, ClassMetadata $target, ?MorphTarget $morphTarget, string $type): ?string
+    {
+        if ($target->isIdentifierComposite) {
+            return self::COMPARE_AS_STORED;
+        }
+        if (($morphTarget?->ids[$type] ?? null)?->encoder() !== null || $owner === null || !$owner->hasField($idField)) {
+            return null;
+        }
+
+        $family = static fn(?string $type): ?string => match (true) {
+            \in_array($type, self::INTEGER_ID_TYPES, true) => 'integer',
+            \in_array($type, self::TEXT_ID_TYPES, true) => 'text',
+            default => null,
+        };
+        $stored = $family($owner->getTypeOfField($idField));
+        $idType = $target->getTypeOfField($target->getSingleIdentifierFieldName());
+        $platform = $query->getEntityManager()->getConnection()->getDatabasePlatform();
+
+        return match (true) {
+            $stored === 'text' && UuidText::supports($platform, $idType) => self::COMPARE_AS_UUID_TEXT,
+            // A guid is text where the platform has no native uuid column.
+            $stored !== null && $stored === ($idType === 'guid' ? 'text' : $family($idType)) => self::COMPARE_AS_STORED,
+            default => null,
+        };
+    }
+
+    /**
+     * The distinct ids of a type among `$storedTypes` the rows `$alias` names hold under
+     * `$idField`, unscoped: the targets a type-only WhereMorph can reach.
+     *
+     * @param list<string> $storedTypes
+     *
+     * @return list<string|int>
+     */
+    private function storedMorphIds(QueryBuilder $predicateOn, string $alias, string $typeField, array $storedTypes, string $idField): array
+    {
+        $metadata = $this->metadataOfAlias($predicateOn, $alias);
+        if ($metadata === null || $storedTypes === []) {
+            return [];
+        }
+
+        $rows = $predicateOn->getEntityManager()->createQueryBuilder()
+            ->select(\sprintf('DISTINCT jsonapi_morph_ids.%s AS id', $idField))
+            ->from($metadata->getName(), 'jsonapi_morph_ids')
+            ->where(\sprintf('jsonapi_morph_ids.%s IN (:jsonapi_morph_types)', $typeField))
+            ->setParameter('jsonapi_morph_types', $storedTypes)
+            ->getQuery()
+            ->getScalarResult();
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = \is_array($row) ? $row['id'] ?? null : null;
+            if (\is_int($id) || (\is_string($id) && $id !== '')) {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * The values among `$values` a stored id column of `$metadata` can hold. An integer
+     * column keeps only integers and digit strings, so a wire id another form of the same
+     * key takes is not bound as a number it never was. A text column compares each integer
+     * as its string, since a list binds as the type of its first value, and on PostgreSQL,
+     * which refuses a text parameter that isn't UTF-8, drops a raw byte form no text column
+     * there can hold.
+     *
+     * @param ClassMetadata<object>|null $metadata
+     * @param list<mixed>                $values
+     *
+     * @return list<mixed>
+     */
+    private function comparableIds(QueryBuilder $query, ?ClassMetadata $metadata, string $idField, array $values): array
+    {
+        $type = $metadata !== null && $metadata->hasField($idField) ? $metadata->getTypeOfField($idField) : null;
+        if (\in_array($type, self::INTEGER_ID_TYPES, true)) {
+            return \array_values(\array_filter($values, static fn(mixed $value): bool => \is_int($value) || (\is_string($value) && \preg_match('/^-?\d+$/', $value) === 1)));
+        }
+        if (\in_array($type, self::TEXT_ID_TYPES, true)) {
+            $postgres = $query->getEntityManager()->getConnection()->getDatabasePlatform() instanceof PostgreSQLPlatform;
+            $values = \array_map(static fn(mixed $value): mixed => \is_int($value) ? (string) $value : $value, $values);
+
+            return \array_values($postgres ? \array_filter($values, static fn(mixed $value): bool => !\is_string($value) || \mb_check_encoding($value, 'UTF-8')) : $values);
+        }
+
+        return \array_values($values);
     }
 
     /**
@@ -409,8 +586,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             return $predicateOn;
         }
 
-        $placeholder = $this->placeholder($bindOn);
         $metadata = $this->metadataOfAlias($predicateOn, $alias);
+        $ids = $this->comparableIds($bindOn, $metadata, $idField, $ids);
+        if ($ids === []) {
+            return $predicateOn->andWhere('1 = 0');
+        }
+        $placeholder = $this->placeholder($bindOn);
         $bindOn->setParameter($placeholder, ...$this->listParameter($bindOn, $metadata, $idField, $ids));
 
         return $predicateOn->andWhere(\sprintf('%s IN (:%s)', $this->path($idField, $alias), $placeholder));

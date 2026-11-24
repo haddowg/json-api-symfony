@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use Doctrine\DBAL\Logging\Middleware as DbalLoggingMiddleware;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
@@ -110,6 +113,12 @@ class BinaryUuidTestKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
+        // The executed statements, so a test can tell which way a scoped filter compared ids.
+        $services->set(QueryCountingLogger::class)->public();
+        $services->set(DbalLoggingMiddleware::class)
+            ->args([new Reference(QueryCountingLogger::class)])
+            ->tag('doctrine.middleware');
+        $services->set(UuidNoteResource::class);
         foreach ([UuidShelfResource::class, UuidBookResource::class, UuidLabelResource::class] as $resource) {
             $service = $services->set($resource);
             if ($this->encodesIds()) {

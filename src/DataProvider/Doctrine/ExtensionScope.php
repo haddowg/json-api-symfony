@@ -40,15 +40,17 @@ final class ExtensionScope
      *
      * @param ClassMetadata<object>            $metadata
      * @param list<DoctrineExtensionInterface> $extensions the extensions supporting `$type`
+     * @param string|null                      $function   a DQL function the selected id is read through
      */
-    public static function admitted(QueryBuilder $bindOn, string $scopeAlias, ClassMetadata $metadata, string $type, array $extensions, ?JsonApiRequestInterface $request): ?string
+    public static function admitted(QueryBuilder $bindOn, string $scopeAlias, ClassMetadata $metadata, string $type, array $extensions, ?JsonApiRequestInterface $request, ?string $function = null): ?string
     {
         if ($extensions === []) {
             return null;
         }
 
+        $id = DoctrineIdentifiers::path($metadata, $scopeAlias);
         $scope = $bindOn->getEntityManager()->createQueryBuilder()
-            ->select(DoctrineIdentifiers::path($metadata, $scopeAlias))
+            ->select($function === null ? $id : \sprintf('%s(%s)', $function, $id))
             ->from($metadata->getName(), $scopeAlias);
         // The scope is embedded in `$bindOn`'s statement, so its extensions draw aliases from it.
         $context = new ExtensionContext($type, QueryPurpose::FetchRelatedCollection, $request, aliases: ExtensionAliases::share($bindOn, $scope));

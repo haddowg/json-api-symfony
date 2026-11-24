@@ -10,7 +10,9 @@ use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidBookEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidLabelEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidNoteEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidShelfEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Uid\Uuid;
@@ -53,6 +55,10 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
             \assert($entity->id instanceof Uuid);
             $this->ids[$name] = $entity->id->toRfc4122();
         }
+        foreach ([1 => ['labels', 'classic'], 2 => ['labels', 'hidden'], 3 => ['shelves', 'fiction'], 4 => ['labels', 'new'], 5 => [null, null]] as $id => [$type, $subject]) {
+            $entityManager->persist(new UuidNoteEntity($id, $type, $subject === null ? null : $this->storedMorphKey($id, $this->ids[$subject])));
+        }
+        $entityManager->flush();
         $this->seeded = [];
         $entityManager->clear();
     }
@@ -300,6 +306,87 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(404, $this->handle('/books/' . $this->ids['gamma'])->getStatusCode());
     }
 
+    #[Test]
+    public function aMorphFilterMatchesBinaryKeyedTargetsTheScopeAdmits(): void
+    {
+        self::assertSame(['1', '4'], $this->noteIds('filter[subject][type]=labels'));
+        self::assertSame(['3'], $this->noteIds('filter[subject][type]=shelves'));
+        self::assertSame(['1'], $this->noteIds('filter[subject][type]=labels&filter[subject][id]=' . $this->ids['classic']));
+        self::assertSame([], $this->noteIds('filter[subject][type]=labels&filter[subject][id]=' . $this->ids['hidden']));
+        self::assertSame(['3'], $this->noteIds('filter[subject][type]=shelves&filter[subject][id]=' . $this->ids['fiction']));
+    }
+
+    #[Test]
+    public function aMorphTargetReadsAgreeWithTheFilter(): void
+    {
+        self::assertSame(['type' => 'labels', 'id' => $this->ids['classic']], $this->linkage($this->dataOf($this->get('/notes/1')), 'subject'));
+        self::assertSame(['id' => $this->ids['classic'], 'name' => 'classic'], $this->identified($this->dataOf($this->get('/notes/1/subject'))));
+        self::assertSame(['id' => $this->ids['fiction'], 'name' => 'Fiction'], $this->identified($this->dataOf($this->get('/notes/3/subject'))));
+        self::assertNull($this->decode($this->get('/notes/2/subject'))['data'] ?? null);
+
+        $included = [];
+        foreach ($this->rows($this->decode($this->get('/notes?include=subject&filter[subject][type]=labels')), 'included') as $row) {
+            $included[] = $row['id'] ?? null;
+        }
+        \sort($included);
+        $expected = [$this->ids['classic'], $this->ids['new']];
+        \sort($expected);
+        self::assertSame($expected, $included);
+    }
+
+    /**
+     * The lower-cased SQL each statement of a request ran.
+     *
+     * @return list<string>
+     */
+    protected function statementsOf(string $path): array
+    {
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $logger->reset();
+        $this->get($path);
+
+        return \array_map('\\strtolower', $logger->statements());
+    }
+
+    /**
+     * What note `$note`'s morph id column holds for the target `$wireId`: its storage key or
+     * its wire id. They are the same canonical string when the Doctrine type converts the id.
+     */
+    protected function storedMorphKey(int $note, string $wireId): string
+    {
+        return $wireId;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function noteIds(string $query): array
+    {
+        $ids = [];
+        foreach ($this->rows($this->decode($this->get('/notes?' . $query))) as $row) {
+            $id = $row['id'] ?? null;
+            self::assertIsString($id);
+            $ids[] = $id;
+        }
+        \sort($ids);
+
+        return $ids;
+    }
+
+    /**
+     * @param array<string, mixed> $resource
+     *
+     * @return array{id: mixed, name: mixed}
+     */
+    private function identified(array $resource): array
+    {
+        $attributes = $resource['attributes'] ?? null;
+        self::assertIsArray($attributes);
+
+        return ['id' => $resource['id'] ?? null, 'name' => $attributes['name'] ?? null];
+    }
+
     /**
      * @var array<string, UuidShelfEntity|UuidBookEntity|UuidLabelEntity>
      */
@@ -371,9 +458,9 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
      *
      * @return list<array<string, mixed>>
      */
-    private function rows(array $document): array
+    private function rows(array $document, string $member = 'data'): array
     {
-        $rows = $document['data'] ?? null;
+        $rows = $document[$member] ?? null;
         self::assertIsArray($rows);
 
         /** @var list<array<string, mixed>> $rows */
