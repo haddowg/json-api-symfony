@@ -7,8 +7,11 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
+use Doctrine\DBAL\Types\BigIntType;
 use Doctrine\DBAL\Types\ConversionException;
 use Doctrine\DBAL\Types\GuidType;
+use Doctrine\DBAL\Types\IntegerType;
+use Doctrine\DBAL\Types\SmallIntType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -56,14 +59,8 @@ final class DoctrineIdentifiers
             return \is_scalar($value) ? $value : null;
         }
 
-        $platform = $this->entityManager->getConnection()->getDatabasePlatform();
-        try {
-            $database = $type->convertToDatabaseValue($value, $platform);
-
-            return self::fitsNativeGuid($type, $platform, $database) ? $database : null;
-        } catch (ConversionException|\InvalidArgumentException|\TypeError|\ValueError) {
-            return null;
-        }
+        // A strict type converts only its PHP value, so a wire or database form is read back first.
+        return self::databaseForm($type, $this->entityManager->getConnection()->getDatabasePlatform(), $value);
     }
 
     /**
@@ -296,6 +293,148 @@ final class DoctrineIdentifiers
         }
 
         return $value;
+    }
+
+    /**
+     * The Doctrine type a value compared with `$field` of `$metadata` converts through:
+     * the target's id type for a single-valued association, else the field's own mapped
+     * type. Null when the field is neither, or its id is composite.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public function fieldType(ClassMetadata $metadata, string $field): ?Type
+    {
+        if ($metadata->hasAssociation($field)) {
+            return $metadata->isSingleValuedAssociation($field)
+                ? $this->type($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field)))
+                : null;
+        }
+
+        $type = $metadata->hasField($field) ? $metadata->getTypeOfField($field) : null;
+
+        return $type !== null && Type::hasType($type) ? Type::getType($type) : null;
+    }
+
+    /**
+     * The database form of a value of `$field`, in whatever form it arrives: the PHP
+     * value a hydrated entity holds (a `Uuid`, a custom type's value object), the
+     * database form a raw read returns, or a wire string. Null when the type converts it
+     * neither way, so it can be no stored value of the field.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public function fieldToDatabase(ClassMetadata $metadata, string $field, mixed $value): mixed
+    {
+        if ($metadata->hasAssociation($field)) {
+            return $metadata->isSingleValuedAssociation($field)
+                ? $this->toDatabase($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field)), $value)
+                : null;
+        }
+
+        $type = $this->fieldType($metadata, $field);
+        if ($type === null) {
+            return \is_scalar($value) ? $value : ($value instanceof \Stringable ? (string) $value : null);
+        }
+
+        return self::databaseForm($type, $this->entityManager->getConnection()->getDatabasePlatform(), $value);
+    }
+
+    /**
+     * The PHP form of a value of `$field`, as a hydrated entity holds it, in whatever form
+     * the value arrives. Null when the type can't convert it.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public function fieldToPhp(ClassMetadata $metadata, string $field, mixed $value): mixed
+    {
+        $type = $this->fieldType($metadata, $field);
+        if ($type === null || $metadata->hasAssociation($field)) {
+            return $value;
+        }
+
+        $platform = $this->entityManager->getConnection()->getDatabasePlatform();
+        $database = self::databaseForm($type, $platform, $value);
+        if ($database === null) {
+            return null;
+        }
+
+        try {
+            return $type->convertToPHPValue($database, $platform);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * A string that is the same for every form of one value of `$field`, for keying rows
+     * by it. Null when the value is not one the field can hold.
+     *
+     * @param ClassMetadata<object> $metadata
+     */
+    public function fieldKey(ClassMetadata $metadata, string $field, mixed $value): ?string
+    {
+        return self::stringOf($this->fieldToDatabase($metadata, $field, $value));
+    }
+
+    /**
+     * The values to bind for an `IN (...)` against `$field` of `$metadata`, each in its
+     * database form, and the array type to bind them with. A value the field's type can't
+     * convert is dropped, since it can match no row.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param iterable<mixed>       $values
+     *
+     * @return array{list<mixed>, ArrayParameterType|null}
+     */
+    public function fieldListParameter(ClassMetadata $metadata, string $field, iterable $values): array
+    {
+        $type = $this->fieldType($metadata, $field);
+        $converted = [];
+        foreach ($values as $value) {
+            $database = $this->fieldToDatabase($metadata, $field, $value);
+            if ($database !== null) {
+                $converted[] = $database;
+            }
+        }
+
+        return [$converted, $type === null ? null : self::listType($type)];
+    }
+
+    /**
+     * `$value` converted to `$type`'s database form on `$platform`, trying it as the PHP
+     * value first and as a database value read back otherwise, or null when neither
+     * converts or the result is a `guid` the platform can't bind.
+     */
+    public static function databaseForm(Type $type, AbstractPlatform $platform, mixed $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        try {
+            $database = $type->convertToDatabaseValue($value, $platform);
+        } catch (\Throwable) {
+            try {
+                $database = $type->convertToDatabaseValue($type->convertToPHPValue($value, $platform), $platform);
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        // A type that passes a value object through, as a string column does, stores its string form.
+        if ($database instanceof \Stringable) {
+            $database = (string) $database;
+        }
+        if ($database === null || !self::fitsNativeGuid($type, $platform, $database)) {
+            return null;
+        }
+
+        // An integer column holds no other value, and PostgreSQL refuses one with an error.
+        if (($type instanceof IntegerType || $type instanceof SmallIntType || $type instanceof BigIntType) && !\is_int($database) && !(\is_string($database) && \preg_match('/^-?\d+$/', $database) === 1)) {
+            return null;
+        }
+
+        return $database;
     }
 
     /**

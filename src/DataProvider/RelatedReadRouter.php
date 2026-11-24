@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -184,7 +185,7 @@ final class RelatedReadRouter implements ResetInterface
                     continue;
                 }
 
-                $row = $rows[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] ?? null;
+                $row = $rows[$member->type][self::lookupKey($server->serializerFor($member->type), $member->id)] ?? null;
                 if ($row !== null) {
                     $kept[] = $member->withTarget($row);
                 }
@@ -229,7 +230,7 @@ final class RelatedReadRouter implements ResetInterface
                     continue;
                 }
 
-                $row = $rows[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] ?? null;
+                $row = $rows[$member->type][self::lookupKey($server->serializerFor($member->type), $member->id)] ?? null;
                 if ($row !== null) {
                     $kept[] = $member->withTarget($row);
                 }
@@ -316,13 +317,18 @@ final class RelatedReadRouter implements ResetInterface
 
         $serializer = $server->serializerFor($type);
         $byWireId = [];
+        $wireIds = [];
         foreach ($keys as $key) {
-            $byWireId[self::wireId($serializer, $key)][] = $key;
+            $wireId = self::wireId($serializer, $key);
+            $byWireId[StoredIdForms::comparable($wireId)][] = $key;
+            $wireIds[] = $wireId;
         }
 
         $admitted = [];
-        foreach ($this->admitIds($type, $serializer, \array_map('strval', \array_keys($byWireId)), $request) as $id) {
-            \array_push($admitted, ...$byWireId[$id] ?? []);
+        foreach ($this->admitIds($type, $serializer, self::inEitherCase($wireIds), $request) as $id) {
+            // A uuid-like id admitted in either case releases its keys once.
+            \array_push($admitted, ...$byWireId[StoredIdForms::comparable($id)] ?? []);
+            unset($byWireId[StoredIdForms::comparable($id)]);
         }
 
         return $admitted;
@@ -411,7 +417,7 @@ final class RelatedReadRouter implements ResetInterface
                 continue;
             }
 
-            $row = $rows[$member->type][self::wireId($server->serializerFor($member->type), $member->id)] ?? null;
+            $row = $rows[$member->type][self::lookupKey($server->serializerFor($member->type), $member->id)] ?? null;
             if ($row !== null) {
                 $loaded[] = $row;
                 $types[\spl_object_id($row)] = $member->type;
@@ -629,7 +635,7 @@ final class RelatedReadRouter implements ResetInterface
             $keys[$wireId] = ForeignKey::parentKey($serializer, $parent);
         }
 
-        return new ForeignKeyParents($type, $objects, $keys);
+        return new ForeignKeyParents($type, $objects, $keys, self::encoderOf($serializer));
     }
 
     /**
@@ -877,7 +883,7 @@ final class RelatedReadRouter implements ResetInterface
 
             [$type, $id] = $pair;
             $targets[] = isset($rows[$type])
-                ? ['type' => $type, 'target' => $rows[$type][self::wireId($server->serializerFor($type), $id)] ?? null, 'loaded' => true]
+                ? ['type' => $type, 'target' => $rows[$type][self::lookupKey($server->serializerFor($type), $id)] ?? null, 'loaded' => true]
                 : ['type' => $type, 'target' => null, 'loaded' => false];
         }
 
@@ -894,6 +900,7 @@ final class RelatedReadRouter implements ResetInterface
      */
     private function fetchByIds(string $type, SerializerInterface $serializer, array $ids, JsonApiRequestInterface $request): array
     {
+        $ids = self::inEitherCase($ids);
         $provider = $this->providers->forType($type);
         if ($provider instanceof FetchesByIdsInterface) {
             $rows = $provider->fetchByIds($type, $ids, $request);
@@ -909,10 +916,56 @@ final class RelatedReadRouter implements ResetInterface
 
         $byId = [];
         foreach ($rows as $row) {
-            $byId[$serializer->getId($row)] = $row;
+            // A uuid-like id a text column keeps in another case still names the row.
+            $byId[StoredIdForms::comparable($serializer->getId($row))] = $row;
         }
 
         return $byId;
+    }
+
+    /**
+     * The key a row loaded for a stored id is found under: its wire id, with a uuid-like
+     * id in lower case, since a text column may keep it in either case.
+     */
+    private static function lookupKey(SerializerInterface $serializer, string|int $id): string
+    {
+        return StoredIdForms::comparable(self::wireId($serializer, $id));
+    }
+
+    /**
+     * `$ids` with a uuid-like id listed in both cases, so a provider finds a row whatever
+     * case its own id column keeps.
+     *
+     * @param list<string> $ids
+     *
+     * @return list<string>
+     */
+    private static function inEitherCase(array $ids): array
+    {
+        $forms = [];
+        foreach (StoredIdForms::forms(null, $ids) as $id) {
+            if (\is_string($id)) {
+                $forms[$id] = $id;
+            }
+        }
+
+        return \array_values($forms);
+    }
+
+    /**
+     * The id encoder `$serializer` declares on its id field, if any.
+     */
+    private static function encoderOf(SerializerInterface $serializer): ?IdEncoderInterface
+    {
+        if ($serializer instanceof AbstractResource) {
+            foreach ($serializer->allFields() as $field) {
+                if ($field instanceof Id) {
+                    return $field->encoder();
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1206,6 +1259,37 @@ final class RelatedReadRouter implements ResetInterface
         return $resources instanceof Server
             ? fn(RelationInterface $relation, array $rows, JsonApiRequestInterface $request): array => $this->admitReached($resources, \array_values($rows), $relation, $request)
             : null;
+    }
+
+    /**
+     * The rows a relation declared with a foreign key holds for one parent, read through
+     * the related type's provider under its scope, as a closure for {@see FilterPaths::of()}
+     * an in-memory filter walks such a relation with, since the parent model holds none.
+     * The closure answers `null` for any other relation. Null when `$resources` is not a
+     * server.
+     *
+     * @return (\Closure(RelationInterface, string, object, JsonApiRequestInterface): (list<object>|null))|null
+     */
+    public function foreignKeyReaderFor(SerializerResolverInterface $resources): ?\Closure
+    {
+        if (!$resources instanceof Server) {
+            return null;
+        }
+
+        return function (RelationInterface $relation, string $parentType, object $row, JsonApiRequestInterface $request) use ($resources): ?array {
+            if (!$this->readsByForeignKey($relation) || !$resources->hasSerializerFor($parentType)) {
+                return null;
+            }
+
+            $criteria = new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: []), request: $request);
+
+            $rows = [];
+            foreach ($this->foreignKeyPage($resources, $parentType, $row, $relation, $criteria, $request)->items as $item) {
+                $rows[] = $item;
+            }
+
+            return $rows;
+        };
     }
 
     /**

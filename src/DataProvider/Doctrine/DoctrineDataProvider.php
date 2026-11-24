@@ -2887,7 +2887,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $window = $criteria->window;
 
         if ($window instanceof CursorWindow) {
-            if ($this->windowFunctions && $window->after === null && $window->before === null) {
+            if ($this->windowFunctions && $scope->partitionsByColumn() && $window->after === null && $window->before === null) {
                 $batch = $this->windowedBatch->fetchCursor($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $window, $this->relatedExtensions($relatedType, $request), $scope);
                 if ($batch !== null) {
                     return $batch;
@@ -2898,7 +2898,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         if ($window instanceof OffsetWindow) {
-            if ($this->windowFunctions) {
+            if ($this->windowFunctions && $scope->partitionsByColumn()) {
                 $batch = $this->windowedBatch->fetch($parents->type, \array_values($parents->parents), $relatedType, $relatedClass, $relation, $criteria, $this->relatedExtensions($relatedType, $request), $scope);
                 if ($batch !== null) {
                     return $batch;
@@ -2964,7 +2964,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->relatedExtensions($relatedType, $request)->scope($builder, 'related');
         $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
         $builder
-            ->select(\sprintf('%s AS %s', $scope->expression('related'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->select(\sprintf('%s AS %s', $scope->discriminator('related'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
             ->addSelect(\sprintf('COUNT(DISTINCT %s) AS jsonapi_count', DoctrineIdentifiers::path($relatedMetadata, 'related')))
             ->groupBy(BatchScope::PARENT_DISCRIMINATOR_ALIAS);
 
@@ -2973,8 +2973,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         foreach ($rows as $row) {
             $wireId = $scope->wireIdOf($row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null);
             $count = $row['jsonapi_count'] ?? 0;
+            // A parent whose key is stored in several forms counts each form's group.
             if ($wireId !== null) {
-                $counts[$wireId] = \is_numeric($count) ? (int) $count : 0;
+                $counts[$wireId] = ($counts[$wireId] ?? 0) + (\is_numeric($count) ? (int) $count : 0);
             }
         }
 
@@ -3027,9 +3028,38 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $metadata = $this->entityManager->getClassMetadata($parent::class);
         $key = $this->ids->valueOf($metadata, $parent);
-        $parents = new ForeignKeyParents($parent::class, ['0' => $parent], ['0' => $key]);
+        $parentType = $this->foreignKeyParentType($parent, $relation, $foreignKey);
+        $parents = new ForeignKeyParents($parentType, ['0' => $parent], ['0' => $key], $this->idEncoders->encoderFor($parentType));
 
         return $this->fetchByForeignKey($relatedType, $relation, $foreignKey, $parents, $criteria, $request)->for('0');
+    }
+
+    /**
+     * The resource type of a lone `$parent` a relation reads through `$foreignKey` for:
+     * for a polymorphic foreign key, the declared type whose resource declares `$relation`,
+     * else the one whose entity `$parent` is, since its type field names the parent by
+     * type. Any other foreign key needs no type, and gets the parent's class.
+     */
+    private function foreignKeyParentType(object $parent, RelationInterface $relation, ForeignKey $foreignKey): string
+    {
+        $morph = $foreignKey->morphColumns();
+        if ($morph === null) {
+            return $parent::class;
+        }
+
+        foreach ($morph->types as $type) {
+            if ($this->idEncoders->resourceFor($type)?->relationNamed($relation->name()) === $relation) {
+                return $type;
+            }
+        }
+        foreach ($morph->types as $type) {
+            $class = $this->entityClassByType[$type] ?? null;
+            if ($class !== null && $parent instanceof $class) {
+                return $type;
+            }
+        }
+
+        return $parent::class;
     }
 
     /**
@@ -3070,7 +3100,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $keys[$wireId] = ForeignKey::parentKey($resource, $parent);
         }
 
-        return new ForeignKeyParents($parentType, $objects, $keys);
+        return new ForeignKeyParents($parentType, $objects, $keys, $this->idEncoders->encoderFor($parentType));
     }
 
     /**

@@ -6,16 +6,21 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
-use Doctrine\DBAL\Types\ConversionException;
+use Doctrine\DBAL\Types\BigIntType;
+use Doctrine\DBAL\Types\GuidType;
+use Doctrine\DBAL\Types\IntegerType;
+use Doctrine\DBAL\Types\SmallIntType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Query\Expr\Andx;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -424,21 +429,36 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $owner = $this->metadataOfAlias($predicateOn, $alias);
         $comparison = $forms === null ? $this->sqlComparison($query, $owner, $idField, $metadata, $target, $type) : null;
         if ($comparison !== null || !$paths->admitsMorphTargets()) {
-            $function = null;
+            // The column is compared as it is, so an index on it serves the query. A uuid read as
+            // text, or a guid kept as text, is matched in lower and in upper case on the
+            // target's side, since the column may keep it either way.
+            $functions = [null];
             if ($comparison === self::COMPARE_AS_UUID_TEXT) {
                 $configuration = $query->getEntityManager()->getConfiguration();
                 if ($configuration->getCustomStringFunction(UuidText::FUNCTION) === null) {
                     $configuration->addCustomStringFunction(UuidText::FUNCTION, UuidTextFunction::class);
                 }
-                $function = UuidText::FUNCTION;
+                $functions = [UuidText::FUNCTION, 'UPPER(' . UuidText::FUNCTION . '(%s))'];
+            } elseif ($comparison === self::COMPARE_AS_STORED && !$metadata->isIdentifierComposite && $metadata->getTypeOfField($metadata->getSingleIdentifierFieldName()) === 'guid') {
+                $functions = ['LOWER', 'UPPER'];
             }
-            $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request(), $function);
+            $stored = $this->path($idField, $alias);
+            $predicates = [];
+            foreach ($functions as $function) {
+                $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request(), $function);
+                if ($admitted === null) {
+                    return $predicateOn;
+                }
+                $predicates[] = \sprintf('%s IN (%s)', $stored, $admitted);
+            }
 
-            return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $admitted));
+            return $predicateOn->andWhere(\count($predicates) === 1 ? $predicates[0] : $query->expr()->orX(...$predicates));
         }
 
-        $keys = $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField);
-        $admitted = $this->comparableIds($query, $owner, $idField, $paths->admitMorphTargets($relation, $type, $keys));
+        // A decoded key held as a value object, such as a Uuid, is admitted by its string form.
+        $keys = \array_map(static fn(mixed $key): mixed => $key instanceof \Stringable ? (string) $key : $key, $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField));
+        // An admitted uuid-like id is bound in both cases, since a text column may keep either.
+        $admitted = $this->comparableIds($query, $owner, $idField, StoredIdForms::forms(null, $paths->admitMorphTargets($relation, $type, $keys)));
         if ($admitted === []) {
             return $predicateOn->andWhere('1 = 0');
         }
@@ -529,6 +549,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $ids = [];
         foreach ($rows as $row) {
             $id = \is_array($row) ? $row['id'] ?? null : null;
+            // An id hydrated to a value object, such as a Uuid, is its string form.
+            $id = $id instanceof \Stringable ? (string) $id : $id;
             if (\is_int($id) || (\is_string($id) && $id !== '')) {
                 $ids[] = $id;
             }
@@ -553,6 +575,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private function comparableIds(QueryBuilder $query, ?ClassMetadata $metadata, string $idField, array $values): array
     {
         $type = $metadata !== null && $metadata->hasField($idField) ? $metadata->getTypeOfField($idField) : null;
+        // A key a decoder gives as a value object, such as a Uuid, is stored as its string form.
+        $values = \array_map(static fn(mixed $value): mixed => \is_object($value) && $value instanceof \Stringable ? (string) $value : $value, $values);
         if (\in_array($type, self::INTEGER_ID_TYPES, true)) {
             return \array_values(\array_filter($values, static fn(mixed $value): bool => \is_int($value) || (\is_string($value) && \preg_match('/^-?\d+$/', $value) === 1)));
         }
@@ -818,7 +842,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         foreach ($hops as $index => $hop) {
             if (!$hop->pivot) {
-                [$current, $currentMetadata] = $this->joinHop($sub, $current, $currentMetadata, $hop->storage(), $hop->relation);
+                [$current, $currentMetadata] = $this->joinHop($sub, $current, $currentMetadata, $hop->storage(), $hop->relation, $query);
                 $this->scopeHop($query, $sub, $current, $currentMetadata, $hop->relation);
 
                 continue;
@@ -938,9 +962,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         // the leaf attribute. A pivot belongsToMany reaches its target through its
         // association entity.
         $pivot = $this->pivotHop($ownerMetadata, $segments[0], $relations[0] ?? null);
+        $foreignKey = $pivot === null ? $this->foreignKeyHop($relations[0] ?? null) : null;
+        $firstSegment = $segments[0];
         if ($pivot !== null) {
-            $firstSegment = $segments[0];
             $relatedClass = $entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty);
+        } elseif ($foreignKey !== null) {
+            $relatedClass = $foreignKey[1];
         } else {
             $firstSegment = $this->assertAssociation($ownerMetadata, $segments[0]);
             $relatedClass = $ownerMetadata->getAssociationTargetClass($firstSegment);
@@ -964,7 +991,11 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         // branch): the inner-inner subquery roots on the owner, joins the first hop,
         // selects the related ids, and is correlated to the outer root by alias.
         $relatedMetadata = $entityManager->getClassMetadata($relatedClass);
-        if ($pivot !== null) {
+        $membership = null;
+        if ($foreignKey !== null) {
+            // A relation read through a foreign key reaches the rows whose key names the owner.
+            $subQuery->andWhere($this->correlateForeignKey($query, $foreignKey[0], $relations[0] ?? null, $relatedMetadata, $relatedAlias, $ownerMetadata, $alias));
+        } elseif ($pivot !== null) {
             // A pivot's members are the far ids of the owner's association rows.
             $rowAlias = $stem . '_row';
             $membership = $entityManager->createQueryBuilder()
@@ -980,10 +1011,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 ->innerJoin(\sprintf('%s.%s', $ownerAlias, $firstSegment), $membershipAlias)
                 ->where(\sprintf('%s = %s', DoctrineIdentifiers::entity($ownerMetadata, $ownerAlias), DoctrineIdentifiers::entity($ownerMetadata, $alias)));
         }
-        $subQuery->andWhere($subQuery->expr()->in(
-            DoctrineIdentifiers::path($relatedMetadata, $relatedAlias),
-            $membership->getDQL(),
-        ));
+        if ($membership !== null) {
+            $subQuery->andWhere($subQuery->expr()->in(
+                DoctrineIdentifiers::path($relatedMetadata, $relatedAlias),
+                $membership->getDQL(),
+            ));
+        }
         $this->scopeHop($query, $subQuery, $relatedAlias, $relatedMetadata, $relations[0] ?? null);
 
         // Chain the remaining intermediate relationship segments off the related
@@ -1001,7 +1034,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $joinsLeaf = $leafIsRelation || \count($segments) === 1;
         $intermediate = $joinsLeaf ? \array_slice($segments, 1) : \array_slice($segments, 1, -1);
         foreach ($intermediate as $offset => $segment) {
-            [$currentAlias, $currentMetadata] = $this->joinHop($subQuery, $currentAlias, $currentMetadata, $segment, $relations[$offset + 1] ?? null);
+            [$currentAlias, $currentMetadata] = $this->joinHop($subQuery, $currentAlias, $currentMetadata, $segment, $relations[$offset + 1] ?? null, $query);
             $this->scopeHop($query, $subQuery, $currentAlias, $currentMetadata, $relations[$offset + 1] ?? null);
         }
 
@@ -1064,10 +1097,17 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      *
      * @return array{string, ClassMetadata<object>}
      */
-    private function joinHop(QueryBuilder $subQuery, string $alias, ClassMetadata $metadata, string $segment, ?RelationInterface $relation): array
+    private function joinHop(QueryBuilder $subQuery, string $alias, ClassMetadata $metadata, string $segment, ?RelationInterface $relation, ?QueryBuilder $bindOn = null): array
     {
         $entityManager = $subQuery->getEntityManager();
         $nextAlias = $alias . '_' . $segment;
+        $foreignKey = $this->foreignKeyHop($relation);
+        if ($foreignKey !== null) {
+            $related = $entityManager->getClassMetadata($foreignKey[1]);
+            $subQuery->innerJoin($foreignKey[1], $nextAlias, 'WITH', $this->correlateForeignKey($bindOn ?? $subQuery, $foreignKey[0], $relation, $related, $nextAlias, $metadata, $alias));
+
+            return [$nextAlias, $related];
+        }
         $pivot = $this->pivotHop($metadata, $segment, $relation);
         if ($pivot !== null) {
             $rowAlias = $nextAlias . '_row';
@@ -1082,6 +1122,73 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $subQuery->innerJoin(\sprintf('%s.%s', $alias, $association), $nextAlias);
 
         return [$nextAlias, $entityManager->getClassMetadata($metadata->getAssociationTargetClass($association))];
+    }
+
+    /**
+     * The foreign key `$relation` reads through and the entity serving its related type,
+     * when it declares one, so a hop over it reaches the rows whose key names the owner
+     * rather than walking the owner's mapping.
+     *
+     * @return array{ForeignKey, class-string}|null
+     */
+    private function foreignKeyHop(?RelationInterface $relation): ?array
+    {
+        if ($relation === null) {
+            return null;
+        }
+
+        $foreignKey = $this->paths?->foreignKeyOf($relation);
+        $relatedType = $relation->relatedTypes()[0] ?? null;
+        if ($foreignKey === null || $relatedType === null) {
+            return null;
+        }
+
+        $class = $this->entityClassFor !== null ? ($this->entityClassFor)($relatedType) : null;
+        if ($class === null) {
+            throw new \LogicException(\sprintf('Relation "%s" reads through the foreign key "%s" of type "%s", which no Doctrine entity serves, so a filter can\'t reach through it.', $relation->name(), $foreignKey->name, $relatedType));
+        }
+
+        return [$foreignKey, $class];
+    }
+
+    /**
+     * The condition joining the rows under `$relatedAlias` to the owner under `$ownerAlias`
+     * through `$foreignKey`, binding a polymorphic key's stored types on `$bindOn`.
+     *
+     * @param ClassMetadata<object> $related
+     * @param ClassMetadata<object> $owner
+     */
+    private function correlateForeignKey(QueryBuilder $bindOn, ForeignKey $foreignKey, ?RelationInterface $relation, ClassMetadata $related, string $relatedAlias, ClassMetadata $owner, string $ownerAlias): string
+    {
+        return ForeignKeyScope::correlate($bindOn, $related, $relatedAlias, $foreignKey, $this->foreignKeyOwnerType($foreignKey, $relation, $owner), $owner, $ownerAlias, $this->placeholder($bindOn));
+    }
+
+    /**
+     * The type of the owner a polymorphic foreign key names: among the MorphTo's types,
+     * the one whose resource declares `$relation`, else the one whose entity the owner is.
+     * Any other foreign key names no type.
+     *
+     * @param ClassMetadata<object> $owner
+     */
+    private function foreignKeyOwnerType(ForeignKey $foreignKey, ?RelationInterface $relation, ClassMetadata $owner): string
+    {
+        $morph = $foreignKey->morphColumns();
+        if ($morph === null) {
+            return '';
+        }
+
+        $byClass = null;
+        foreach ($morph->types as $type) {
+            if ($relation !== null && $this->paths?->declares($type, $relation) === true) {
+                return $type;
+            }
+            $class = $this->entityClassFor !== null ? ($this->entityClassFor)($type) : null;
+            if ($byClass === null && $class !== null && \is_a($owner->getName(), $class, true)) {
+                $byClass = $type;
+            }
+        }
+
+        return $byClass ?? '';
     }
 
     /**
@@ -1320,6 +1427,13 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                 $operator,
             )),
         };
+
+        // A value the column can't hold equals no row, and differs from every set one.
+        if (($dqlOperator === '=' || $dqlOperator === '<>') && $this->cannotHold($predicateOn, $path, $expected)) {
+            $predicateOn->andWhere($dqlOperator === '<>' ? \sprintf('%s IS NOT NULL', $path) : '1 = 0');
+
+            return;
+        }
 
         $placeholder = $this->placeholder($bindOn);
 
@@ -1617,16 +1731,32 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             return [$ids->toDatabase($target, $value), $type?->getBindingType()];
         }
 
-        $type = $this->binaryType($metadata, $field);
+        $type = $this->keyType($metadata, $field);
         if ($type === null) {
             return [$value, null];
         }
 
-        try {
-            return [$type->convertToDatabaseValue($value, $query->getEntityManager()->getConnection()->getDatabasePlatform()), $type->getBindingType()];
-        } catch (ConversionException|\InvalidArgumentException|\TypeError|\ValueError) {
-            return [$value, null];
+        $database = DoctrineIdentifiers::databaseForm($type, $query->getEntityManager()->getConnection()->getDatabasePlatform(), $value);
+
+        return $database === null ? [$value, null] : [$database, $type->getBindingType()];
+    }
+
+    /**
+     * Whether `$value` is no value the column at `$path` can hold: its type is one
+     * {@see keyType()} converts, and converts it neither way, as a malformed `guid` on a
+     * platform with a native uuid column, which would refuse it with an error.
+     */
+    private function cannotHold(QueryBuilder $query, string $path, mixed $value): bool
+    {
+        if ($value === null || $value instanceof \DateTimeInterface) {
+            return false;
         }
+
+        [$alias, $field] = \explode('.', $path, 2);
+        $metadata = $this->metadataOfAlias($query, $alias);
+        $type = $metadata === null || $metadata->hasAssociation($field) ? null : $this->keyType($metadata, $field);
+
+        return $type !== null && DoctrineIdentifiers::databaseForm($type, $query->getEntityManager()->getConnection()->getDatabasePlatform(), $value) === null;
     }
 
     /**
@@ -1676,7 +1806,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         $ids = new DoctrineIdentifiers($query->getEntityManager());
         $target = $this->associationTarget($query, $metadata, $field);
-        $type = $target !== null ? $ids->type($target) : $this->binaryType($metadata, $field);
+        $type = $target !== null ? $ids->type($target) : $this->keyType($metadata, $field);
         if ($type === null) {
             return [$values, null];
         }
@@ -1687,11 +1817,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
             if ($target !== null) {
                 $database = $ids->toDatabase($target, $value);
             } else {
-                try {
-                    $database = $type->convertToDatabaseValue($value, $platform);
-                } catch (ConversionException) {
-                    $database = null;
-                }
+                $database = DoctrineIdentifiers::databaseForm($type, $platform, $value);
             }
             if ($database !== null) {
                 $converted[] = $database;
@@ -1722,11 +1848,14 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * The Doctrine type of `$field` when a value compared with it must be converted to
      * its database form first: a Symfony UID type, which stores a UUID or ULID as bytes
-     * on a platform with no native UUID type, or any type the driver binds as binary.
+     * on a platform with no native UUID type, a `guid`, which a native uuid column refuses
+     * malformed, an integer, which PostgreSQL refuses a non-integer for, any type the
+     * driver binds as binary, and any type DBAL doesn't ship, such
+     * as one holding a value object, whose database form only the type knows.
      *
      * @param ClassMetadata<object> $metadata
      */
-    private function binaryType(ClassMetadata $metadata, string $field): ?Type
+    private function keyType(ClassMetadata $metadata, string $field): ?Type
     {
         $name = $metadata->hasField($field) ? $metadata->getTypeOfField($field) : null;
         if ($name === null || !Type::hasType($name)) {
@@ -1735,7 +1864,12 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
 
         $type = Type::getType($name);
 
-        return $type instanceof \Symfony\Bridge\Doctrine\Types\AbstractUidType || \in_array($type->getBindingType(), [ParameterType::BINARY, ParameterType::LARGE_OBJECT], true) ? $type : null;
+        return $type instanceof \Symfony\Bridge\Doctrine\Types\AbstractUidType
+            || $type instanceof GuidType
+            || $type instanceof IntegerType || $type instanceof SmallIntType || $type instanceof BigIntType
+            || \in_array($type->getBindingType(), [ParameterType::BINARY, ParameterType::LARGE_OBJECT], true)
+            || !\str_starts_with($type::class, 'Doctrine\\DBAL\\Types\\')
+            ? $type : null;
     }
 
     /**

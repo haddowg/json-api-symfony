@@ -270,6 +270,26 @@ the in-memory one only the first:
   with one reads through, on the rows of the related type it serves: the handler hands it
   the rows joining the parent and the rows leaving it (see
   [relationships → writing through a foreign key](relationships.md#writing-through-a-foreign-key)).
+  [`WritesPolymorphicForeignKeysInterface`](../src/DataPersister/WritesPolymorphicForeignKeysInterface.php)
+  extends it with `writePolymorphicForeignKey()`, which writes a foreign key that names a
+  `MorphTo`, as `MorphMany` and `MorphOne` declare. It is handed the parent's type, since
+  the row's type field has to name it:
+
+  ```php
+  public function writePolymorphicForeignKey(string $relatedType, ForeignKey $foreignKey, string $parentType, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
+  {
+      $morph = $foreignKey->morphColumns();
+      foreach ($detach as $note) {
+          $note->{$morph->type} = null;
+          $note->{$morph->id} = null;
+      }
+      foreach ($attach as $note) {
+          $note->{$morph->type} = $morph->storedValueFor($parentType); // 'posts', or its typeMap key
+          $note->{$morph->id} = $parentKey;                             // the parent's decoded wire id
+      }
+      $this->notes->save([...$attach, ...$detach]);
+  }
+  ```
 - [`ReportsMovedMembersInterface`](../src/DataPersister/ReportsMovedMembersInterface.php)
   (`movedMembers()`) reports each child a to-many add or replace would take from
   another parent, so the handler can dispatch a `BeforeMemberMoveEvent` and the

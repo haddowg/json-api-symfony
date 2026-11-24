@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\RelationHop;
@@ -42,6 +43,7 @@ final readonly class FilterPaths
      * @param list<RelationInterface>                                                             $refused    the relations through which the filter being applied matches no row
      * @param RelationHop|null                                                                    $under      the relation the filters run under, on a relation's reads
      * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission the storage keys of a type a polymorphic relation stores that its provider admits, see {@see admitMorphTargets()}
+     * @param (\Closure(RelationInterface, string, object, JsonApiRequestInterface): (list<object>|null))|null $foreignKeyRead the rows a relation read through a foreign key holds for one parent, see {@see relationReader()}
      */
     public function __construct(
         private ThroughPathResolver $resolver,
@@ -55,6 +57,8 @@ final readonly class FilterPaths
         private array $refused = [],
         private ?RelationHop $under = null,
         private ?\Closure $morphAdmission = null,
+        private ?SerializerResolverInterface $resources = null,
+        private ?\Closure $foreignKeyRead = null,
     ) {}
 
     /**
@@ -68,8 +72,9 @@ final readonly class FilterPaths
      *
      * @param (\Closure(RelationInterface, list<object>, JsonApiRequestInterface): list<object>)|null $admission
      * @param (\Closure(RelationInterface, string, list<mixed>, JsonApiRequestInterface): list<mixed>)|null $morphAdmission
+     * @param (\Closure(RelationInterface, string, object, JsonApiRequestInterface): (list<object>|null))|null $foreignKeyRead
      */
-    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null, ?RelationInterface $relation = null, ?PivotRowRelations $pivotRows = null, ?\Closure $morphAdmission = null): ?self
+    public static function of(SerializerResolverInterface $resources, ?AbstractResource $resource, ?string $parentType = null, ?\Closure $admission = null, ?RelationInterface $relation = null, ?PivotRowRelations $pivotRows = null, ?\Closure $morphAdmission = null, ?\Closure $foreignKeyRead = null): ?self
     {
         if ($resource === null) {
             return null;
@@ -85,7 +90,7 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources, $pivotRows), $admission, under: $under, morphAdmission: $morphAdmission);
+        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources, $pivotRows), $admission, under: $under, morphAdmission: $morphAdmission, resources: $resources, foreignKeyRead: $foreignKeyRead);
     }
 
     /**
@@ -115,7 +120,7 @@ final readonly class FilterPaths
      */
     public function scoped(?JsonApiRequestInterface $request, array $refused = []): self
     {
-        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->under, $this->morphAdmission);
+        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->under, $this->morphAdmission, $this->resources, $this->foreignKeyRead);
     }
 
     /**
@@ -271,6 +276,53 @@ final readonly class FilterPaths
     public function named(): array
     {
         return $this->named;
+    }
+
+    /**
+     * The foreign key `$relation` reads through, resolved against its related type, or
+     * `null` when it declares none or the paths were built without the registered types.
+     */
+    public function foreignKeyOf(RelationInterface $relation): ?ForeignKey
+    {
+        return $this->resources === null ? null : ForeignKey::of($relation, $this->resources);
+    }
+
+    /**
+     * The relation reader the reference in-memory filter handler walks hops with: for a
+     * hop over a relation read through a foreign key, the rows its related type's provider
+     * reads for the row, as the Doctrine provider's filters reach them; `null` for any
+     * other hop, so the handler reads the model's value.
+     *
+     * @return \Closure(mixed, string, ?RelationInterface): (list<object>|null)
+     */
+    public function relationReader(): \Closure
+    {
+        return function (mixed $row, string $path, ?RelationInterface $relation): ?array {
+            $relation ??= $this->relationAt($path);
+            if ($this->foreignKeyRead === null || $this->request === null || $relation === null || !\is_object($row)) {
+                return null;
+            }
+
+            $segments = \explode('.', $path);
+            \array_pop($segments);
+            $parentType = $segments === [] ? $this->type : ($this->relationAt(\implode('.', $segments))?->relatedTypes()[0] ?? null);
+
+            return $parentType === null ? null : ($this->foreignKeyRead)($relation, $parentType, $row, $this->request);
+        };
+    }
+
+    /**
+     * Whether the resource registered for `$type` declares `$relation` itself.
+     */
+    public function declares(string $type, RelationInterface $relation): bool
+    {
+        if ($this->resources === null || !$this->resources->hasSerializerFor($type)) {
+            return false;
+        }
+
+        $serializer = $this->resources->serializerFor($type);
+
+        return $serializer instanceof AbstractResource && $serializer->relationNamedIncludingHidden($relation->name()) === $relation;
     }
 
     /**

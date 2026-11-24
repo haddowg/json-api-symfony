@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
-use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
 
 /**
@@ -17,26 +17,40 @@ use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
  *
  * The foreign key's column is either a single-valued association, compared by the id it
  * references (`IDENTITY(related.<column>)`) and bound through the target entity's id
- * type, or a mapped field, compared directly and bound through the field's type. The
- * parents are never asked for their metadata, so they need not be entities.
+ * type, or a mapped field, compared directly and bound through the field's type. A
+ * `MorphTo` declared with `identifiedByColumns()` compares its id field the same way and
+ * also keeps its type field to the values naming the parents' type, so a row pointing at
+ * another type with the same id is never read. Every key, the parents' and the rows',
+ * is compared in its database form ({@see DoctrineIdentifiers::fieldToDatabase()}), so a
+ * `Uuid` the ORM hydrates and the bytes a binary column holds are one key. The parents are
+ * never asked for their metadata, so they need not be entities.
  *
  * @internal
  */
 final class ForeignKeyScope
 {
+    private const array INTEGER_TYPES = ['integer', 'smallint', 'bigint'];
+    private const array TEXT_TYPES = ['string', 'text', 'ascii_string'];
+
     /**
-     * @param ClassMetadata<object>|null $target    the association's target entity, or `null` for a field
-     * @param array<string, string>      $wireIdOf  each parent's normalised key mapped to its wire id
-     * @param list<mixed>                $bound     the parents' keys in their database form
+     * @param ClassMetadata<object>  $related     the related entity
+     * @param string                 $column      the field or association holding the parent's key
+     * @param string|null            $typeColumn  the field holding a polymorphic foreign key's stored type
+     * @param list<string>           $storedTypes the stored type values naming the parents' type
+     * @param array<string, string>  $wireIdOf    each parent's key, in database form as a string, mapped to its wire id
+     * @param list<mixed>            $bound       the parents' keys in their database form
+     * @param bool                   $oneFormEach whether each parent's keys differ only in letter case, so a lower-cased column partitions the rows by parent
      */
     private function __construct(
         private readonly DoctrineIdentifiers $ids,
+        private readonly ClassMetadata $related,
         private readonly string $column,
-        private readonly ?ClassMetadata $target,
-        private readonly ?Type $fieldType,
+        private readonly ?string $typeColumn,
+        private readonly array $storedTypes,
         private readonly ForeignKeyParents $parents,
         private readonly array $wireIdOf,
         private readonly array $bound,
+        private readonly bool $oneFormEach = true,
     ) {}
 
     /**
@@ -48,36 +62,66 @@ final class ForeignKeyScope
      */
     public static function of(EntityManagerInterface $entityManager, DoctrineIdentifiers $ids, ClassMetadata $relatedMetadata, ForeignKey $foreignKey, ForeignKeyParents $parents): self
     {
-        $column = $foreignKey->column;
-        $target = null;
-        $fieldType = null;
-        if ($relatedMetadata->hasAssociation($column) && $relatedMetadata->isSingleValuedAssociation($column)) {
-            $target = $entityManager->getClassMetadata($relatedMetadata->getAssociationTargetClass($column));
-        } elseif ($relatedMetadata->hasField($column)) {
-            $typeName = $relatedMetadata->getTypeOfField($column);
-            $fieldType = \is_string($typeName) ? Type::getType($typeName) : null;
-        } else {
-            throw self::unmapped($relatedMetadata->getName(), $foreignKey);
-        }
+        [$column, $typeColumn, $storedTypes] = self::columns($relatedMetadata, $foreignKey, $parents->type);
 
         $wireIdOf = [];
         $bound = [];
-        $platform = $entityManager->getConnection()->getDatabasePlatform();
-        foreach ($parents->keys as $wireId => $key) {
-            $database = match (true) {
-                $target !== null => $ids->toDatabase($target, $key),
-                $fieldType !== null => $fieldType->convertToDatabaseValue($key, $platform),
-                default => $key,
-            };
-            $normalised = self::normalise($database);
-            if ($normalised === null) {
-                continue;
+        $seen = [];
+        $oneFormEach = true;
+        if ($typeColumn === null || $storedTypes !== []) {
+            foreach ($parents->keys as $wireId => $key) {
+                // A polymorphic id column may hold the storage key or the wire id, a uuid in either case.
+                $forms = $typeColumn === null ? [$key] : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
+                $parentForms = [];
+                foreach ($forms as $form) {
+                    $database = $ids->fieldToDatabase($relatedMetadata, $column, $form);
+                    $exact = self::normalise($database);
+                    if ($exact === null || isset($seen[$exact])) {
+                        continue;
+                    }
+                    $seen[$exact] = true;
+                    $normalised = self::normalise($database, $typeColumn !== null);
+                    \assert($normalised !== null);
+                    $wireIdOf[$normalised] = (string) $wireId;
+                    $parentForms[$normalised] = true;
+                    $bound[] = $database;
+                }
+                $oneFormEach = $oneFormEach && \count($parentForms) <= 1;
             }
-            $wireIdOf[$normalised] = (string) $wireId;
-            $bound[] = $database;
         }
 
-        return new self($ids, $column, $target, $fieldType, $parents, $wireIdOf, $bound);
+        return new self($ids, $relatedMetadata, $column, $typeColumn, $storedTypes, $parents, $wireIdOf, $bound, $oneFormEach);
+    }
+
+    /**
+     * The field or association holding the parent's key, the field holding a polymorphic
+     * foreign key's stored type, and the stored values naming `$parentType`.
+     *
+     * @param ClassMetadata<object> $relatedMetadata
+     *
+     * @return array{string, ?string, list<string>}
+     *
+     * @throws \LogicException when the related entity maps none of them
+     */
+    public static function columns(ClassMetadata $relatedMetadata, ForeignKey $foreignKey, string $parentType): array
+    {
+        $morph = $foreignKey->morphColumns();
+        if ($morph !== null) {
+            foreach ([$morph->type, $morph->id] as $field) {
+                if (!$relatedMetadata->hasField($field)) {
+                    throw self::unmappedMorph($relatedMetadata->getName(), $foreignKey, $field);
+                }
+            }
+
+            return [$morph->id, $morph->type, $morph->storedValues($parentType)];
+        }
+
+        $column = $foreignKey->column;
+        if (($relatedMetadata->hasAssociation($column) && $relatedMetadata->isSingleValuedAssociation($column)) || $relatedMetadata->hasField($column)) {
+            return [$column, null, []];
+        }
+
+        throw self::unmapped($relatedMetadata->getName(), $foreignKey);
     }
 
     /**
@@ -94,6 +138,75 @@ final class ForeignKeyScope
     }
 
     /**
+     * The refusal of a polymorphic foreign key whose type or id field the related entity
+     * doesn't map.
+     */
+    public static function unmappedMorph(string $relatedClass, ForeignKey $foreignKey, string $field): \LogicException
+    {
+        return new \LogicException(\sprintf(
+            'The foreign key "%s" is a MorphTo keeping its target in "%s", which %s doesn\'t map as a field.',
+            $foreignKey->name,
+            $field,
+            $relatedClass,
+        ));
+    }
+
+    /**
+     * The DQL condition that correlates the related entity under `$relatedAlias` with the
+     * owner under `$ownerAlias`, a `$ownerType` row, through `$foreignKey`, as a filter's
+     * hop over the relation joins them. A polymorphic foreign key's stored type values bind
+     * to `:$placeholder` on `$bindOn`.
+     *
+     * @param ClassMetadata<object> $relatedMetadata
+     * @param ClassMetadata<object> $ownerMetadata
+     */
+    public static function correlate(QueryBuilder $bindOn, ClassMetadata $relatedMetadata, string $relatedAlias, ForeignKey $foreignKey, string $ownerType, ClassMetadata $ownerMetadata, string $ownerAlias, string $placeholder): string
+    {
+        [$column, $typeColumn, $storedTypes] = self::columns($relatedMetadata, $foreignKey, $ownerType);
+        if ($typeColumn !== null && $storedTypes === []) {
+            return '1 = 0';
+        }
+
+        $condition = $relatedMetadata->hasAssociation($column)
+            ? DoctrineIdentifiers::joins($relatedAlias . '.' . $column, $ownerMetadata, $ownerAlias)
+            : \sprintf('%s.%s = %s', $relatedAlias, $column, DoctrineIdentifiers::path($ownerMetadata, $ownerAlias));
+        if ($typeColumn === null) {
+            return $condition;
+        }
+
+        $bindOn->setParameter($placeholder, $storedTypes);
+
+        return \sprintf('%s.%s IN (:%s) AND %s', $relatedAlias, $typeColumn, $placeholder, $condition);
+    }
+
+    /**
+     * Whether SQL can compare the related entity's foreign key with the owner's id column
+     * as they are stored, which a filter's hop over the relation needs: an association
+     * always can, and a field can when both have the same Doctrine type, or both are
+     * integers or both text.
+     *
+     * @param ClassMetadata<object> $relatedMetadata
+     * @param ClassMetadata<object> $ownerMetadata
+     */
+    public static function comparableInSql(ClassMetadata $relatedMetadata, ForeignKey $foreignKey, string $ownerType, ClassMetadata $ownerMetadata): bool
+    {
+        [$column] = self::columns($relatedMetadata, $foreignKey, $ownerType);
+        if ($relatedMetadata->hasAssociation($column)) {
+            return true;
+        }
+        if ($ownerMetadata->isIdentifierComposite || $ownerMetadata->hasAssociation($ownerMetadata->getSingleIdentifierFieldName())) {
+            return false;
+        }
+
+        $stored = $relatedMetadata->getTypeOfField($column);
+        $id = $ownerMetadata->getTypeOfField($ownerMetadata->getSingleIdentifierFieldName());
+
+        return $stored === $id
+            || (\in_array($stored, self::INTEGER_TYPES, true) && \in_array($id, self::INTEGER_TYPES, true))
+            || (\in_array($stored, self::TEXT_TYPES, true) && \in_array($id, self::TEXT_TYPES, true));
+    }
+
+    /**
      * The same scope narrowed to the parent with `$wireId`.
      */
     public function only(string $wireId): self
@@ -102,13 +215,51 @@ final class ForeignKeyScope
         $wireIdOf = \array_filter($this->wireIdOf, static fn(string $candidate): bool => $candidate === $wireId);
         $bound = [];
         foreach ($this->bound as $database) {
-            $normalised = self::normalise($database);
+            $normalised = self::normalise($database, $this->typeColumn !== null);
             if ($normalised !== null && isset($wireIdOf[$normalised])) {
                 $bound[] = $database;
             }
         }
 
-        return new self($this->ids, $this->column, $this->target, $this->fieldType, $parents, $wireIdOf, $bound);
+        return new self($this->ids, $this->related, $this->column, $this->typeColumn, $this->storedTypes, $parents, $wireIdOf, $bound, $this->oneFormEach);
+    }
+
+    /**
+     * Whether a query can partition the rows by parent on {@see discriminator()}: each
+     * parent's key is held in one form, or in forms that differ only in letter case, which
+     * a text column's discriminator lower-cases. A polymorphic id an encoder stores in two
+     * really different forms, a prefixed wire id beside its storage key, can't be, and its
+     * rows are then read per parent.
+     */
+    public function partitionsByColumn(): bool
+    {
+        if ($this->oneFormEach && ($this->typeColumn === null || $this->lowersColumn())) {
+            return true;
+        }
+
+        return \count($this->bound) === \count(\array_unique($this->wireIdOf));
+    }
+
+    /**
+     * The DQL a query selects, partitions and groups the rows by as their parent: the
+     * foreign key, lower-cased for a polymorphic id kept as text, since such a column may
+     * keep one parent's key in either case. It is never compared in a WHERE, so an index on
+     * the column still serves the scope.
+     */
+    public function discriminator(string $alias): string
+    {
+        return $this->lowersColumn() ? \sprintf('LOWER(%s)', $this->expression($alias)) : $this->expression($alias);
+    }
+
+    /**
+     * Whether the discriminator lower-cases the column: a polymorphic id kept in a text
+     * field.
+     */
+    private function lowersColumn(): bool
+    {
+        return $this->typeColumn !== null
+            && $this->related->hasField($this->column)
+            && \in_array($this->related->getTypeOfField($this->column), self::TEXT_TYPES, true);
     }
 
     /**
@@ -124,7 +275,7 @@ final class ForeignKeyScope
      */
     public function expression(string $alias): string
     {
-        return $this->target !== null
+        return $this->related->hasAssociation($this->column)
             ? \sprintf('IDENTITY(%s.%s)', $alias, $this->column)
             : \sprintf('%s.%s', $alias, $this->column);
     }
@@ -136,15 +287,20 @@ final class ForeignKeyScope
     public function scope(QueryBuilder $builder, string $alias, bool $select = false): QueryBuilder
     {
         if ($select) {
-            $builder->addSelect(\sprintf('%s AS %s', $this->expression($alias), BatchScope::PARENT_DISCRIMINATOR_ALIAS));
+            $builder->addSelect(\sprintf('%s AS %s', $this->discriminator($alias), BatchScope::PARENT_DISCRIMINATOR_ALIAS));
         }
 
         if ($this->bound === []) {
             return $builder->andWhere('1 = 0');
         }
 
+        if ($this->typeColumn !== null) {
+            $builder->andWhere(\sprintf('%s.%s IN (:jsonapi_fk_types)', $alias, $this->typeColumn))
+                ->setParameter('jsonapi_fk_types', $this->storedTypes);
+        }
+
         $builder->andWhere(\sprintf('%s IN (:jsonapi_fk_parents)', $this->expression($alias)));
-        $type = $this->target !== null ? $this->ids->type($this->target) : $this->fieldType;
+        $type = $this->ids->fieldType($this->related, $this->column);
 
         return $type === null
             ? $builder->setParameter('jsonapi_fk_parents', $this->bound)
@@ -152,8 +308,8 @@ final class ForeignKeyScope
     }
 
     /**
-     * The wire id of the parent whose key a row's foreign key `$raw` holds, read from the
-     * database, or `null` when it is none of the parents'.
+     * The wire id of the parent whose key a row's foreign key `$raw` holds, in whatever
+     * form the query returned it, or `null` when it is none of the parents'.
      */
     public function wireIdOf(mixed $raw): ?string
     {
@@ -161,17 +317,21 @@ final class ForeignKeyScope
             return null;
         }
 
-        if ($this->target !== null) {
-            $raw = $this->ids->toDatabase($this->target, $this->ids->toPhp($this->target, $raw));
-        }
-
-        $normalised = self::normalise($raw);
+        $normalised = self::normalise($this->ids->fieldToDatabase($this->related, $this->column, $raw), $this->typeColumn !== null);
 
         return $normalised === null ? null : ($this->wireIdOf[$normalised] ?? null);
     }
 
-    private static function normalise(mixed $value): ?string
+    /**
+     * A database value as the string it is keyed by: a polymorphic id in lower case, since
+     * its column may keep a key in either case, any other key exactly.
+     */
+    private static function normalise(mixed $value, bool $polymorphic = false): ?string
     {
-        return \is_scalar($value) || $value instanceof \Stringable ? (string) $value : null;
+        if (!\is_scalar($value) && !$value instanceof \Stringable) {
+            return null;
+        }
+
+        return $polymorphic ? \strtolower((string) $value) : (string) $value;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Collection\CollectionResult;
 use haddowg\JsonApi\Collection\LinkRows\InMemoryLinkRows;
@@ -39,12 +40,15 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
 
     private readonly WindowExecutor $windowExecutor;
 
+    private readonly DoctrineIdentifiers $ids;
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly DoctrineFilterHandler $filterHandler,
         private readonly DoctrineSortHandler $sortHandler,
     ) {
         $this->windowExecutor = new WindowExecutor();
+        $this->ids = new DoctrineIdentifiers($entityManager);
     }
 
     public function queryLinkRows(mixed $parent, MorphToMany $relation, LinkRowQuery $query, JsonApiRequestInterface $request): CollectionResult
@@ -62,10 +66,16 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
         $builder = $this->entityManager->createQueryBuilder()
             ->select(self::ALIAS)
             ->from($through, self::ALIAS)
-            ->where(\sprintf('%s.%s = :jsonapi_owner', self::ALIAS, $fields->owner))
-            ->setParameter('jsonapi_owner', $parent);
+            ->where(\sprintf('%s.%s = :jsonapi_owner', self::ALIAS, $fields->owner));
+        // Bound as the owner's id in its database form, which ORM would bind a Uuid id as text.
+        if (\is_object($parent)) {
+            $ownerMetadata = $this->entityManager->getClassMetadata($parent::class);
+            $this->ids->bind($builder, 'jsonapi_owner', $ownerMetadata, $this->ids->valueOf($ownerMetadata, $parent));
+        } else {
+            $builder->setParameter('jsonapi_owner', $parent);
+        }
 
-        $this->whereTypeCounts($builder, $query, $fields->type, $fields->id);
+        $this->whereTypeCounts($builder, $query, $this->entityManager->getClassMetadata($through), $fields->type, $fields->id);
 
         foreach ($query->filters as $directive) {
             $builder = $this->filterHandler->applyOn($directive->filter, $builder, $directive->value, self::ALIAS);
@@ -120,12 +130,13 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
 
         $seen = \array_fill_keys(\array_keys($parents), []);
         if ($typeOf !== [] && $owners !== [] && \class_exists($fields->through)) {
+            $rowMetadata = $this->entityManager->getClassMetadata($fields->through);
             $rows = $this->entityManager->createQueryBuilder()
                 ->select(\sprintf('IDENTITY(%1$s.%2$s) AS owner, %1$s.%3$s AS type, %1$s.%4$s AS id', self::ALIAS, $fields->owner, $fields->type, $fields->id))
                 ->from($fields->through, self::ALIAS)
                 ->where(\sprintf('%s.%s IN (:jsonapi_owners)', self::ALIAS, $fields->owner))
                 ->andWhere(\sprintf('%s.%s IN (:jsonapi_types)', self::ALIAS, $fields->type))
-                ->setParameter('jsonapi_owners', $owners)
+                ->setParameter('jsonapi_owners', ...$this->ownerIds($rowMetadata, $fields->owner, $owners))
                 ->setParameter('jsonapi_types', \array_map('strval', \array_keys($typeOf)))
                 ->getQuery()
                 ->getArrayResult();
@@ -137,10 +148,13 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
                 $stored = ($row['type'] ?? null) instanceof \BackedEnum ? $row['type']->value : $row['type'];
                 $type = \is_scalar($stored) ? ($typeOf[(string) $stored] ?? null) : null;
                 $id = $row['id'] ?? null;
-                if ($type === null || (!\is_int($id) && !\is_string($id)) || $id === '' || !\is_scalar($row['owner'] ?? null)) {
+                // An id hydrated to a value object, such as a Uuid, is its string form.
+                $id = $id instanceof \Stringable ? (string) $id : $id;
+                $owner = $this->ids->fieldKey($rowMetadata, $fields->owner, $row['owner'] ?? null);
+                if ($type === null || (!\is_int($id) && !\is_string($id)) || $id === '' || $owner === null) {
                     continue;
                 }
-                foreach ($positions[(string) $row['owner']] ?? [] as $index) {
+                foreach ($positions[$owner] ?? [] as $index) {
                     $seen[$index][$type][(string) $id] ??= $id;
                 }
             }
@@ -194,7 +208,7 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
             ->select(self::ALIAS)
             ->from($fields->through, self::ALIAS)
             ->where(\sprintf('%s.%s IN (:jsonapi_owners)', self::ALIAS, $fields->owner))
-            ->setParameter('jsonapi_owners', $owners)
+            ->setParameter('jsonapi_owners', ...$this->ownerIds($metadata, $fields->owner, $owners))
             ->getQuery()
             ->getResult();
 
@@ -220,19 +234,33 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
     }
 
     /**
+     * The owners' ids in their database form and the array type to bind them with, so an
+     * id ORM would otherwise bind as a string, such as a `Uuid` kept as bytes, matches.
+     *
+     * @param ClassMetadata<object> $metadata the link-row entity
+     * @param list<object>          $owners
+     *
+     * @return array{list<mixed>, \Doctrine\DBAL\ArrayParameterType|null}
+     */
+    private function ownerIds(ClassMetadata $metadata, string $owner, array $owners): array
+    {
+        $ids = [];
+        foreach ($owners as $parent) {
+            $ids[] = $this->ids->valueOf($this->entityManager->getClassMetadata($parent::class), $parent);
+        }
+
+        return $this->ids->fieldListParameter($metadata, $owner, $ids);
+    }
+
+    /**
      * The parent's single identifier as the key its rows' owner holds, or `null` when it
      * has none or a composite one.
      */
     private function ownerKey(object $parent): ?string
     {
-        $values = $this->entityManager->getClassMetadata($parent::class)->getIdentifierValues($parent);
-        $value = \count($values) === 1 ? \reset($values) : null;
-        if (\is_object($value)) {
-            $nested = $this->entityManager->getClassMetadata($value::class)->getIdentifierValues($value);
-            $value = \count($nested) === 1 ? \reset($nested) : null;
-        }
+        $metadata = $this->entityManager->getClassMetadata($parent::class);
 
-        return \is_scalar($value) ? (string) $value : null;
+        return $this->ids->key($metadata, $this->ids->valueOf($metadata, $parent));
     }
 
     /**
@@ -240,7 +268,10 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
      * narrow, or a narrowed type's value with one of its admitted ids. With neither, no
      * row counts.
      */
-    private function whereTypeCounts(QueryBuilder $builder, LinkRowQuery $query, string $typeField, string $idField): void
+    /**
+     * @param ClassMetadata<object> $metadata the link-row entity
+     */
+    private function whereTypeCounts(QueryBuilder $builder, LinkRowQuery $query, ClassMetadata $metadata, string $typeField, string $idField): void
     {
         $type = \sprintf('%s.%s', self::ALIAS, $typeField);
         $id = \sprintf('%s.%s', self::ALIAS, $idField);
@@ -258,7 +289,9 @@ final class DoctrineLinkRows implements LinkRowQueryInterface, LinkRowKeysInterf
                 $builder->expr()->in($id, ':jsonapi_admitted_' . $index),
             );
             $builder->setParameter('jsonapi_narrowed_' . $index, (string) $value);
-            $builder->setParameter('jsonapi_admitted_' . $index, $ids);
+            // Bound through the id field's type, so a binary uuid column compares its bytes.
+            [$bound, $listType] = $this->ids->fieldListParameter($metadata, $idField, $ids);
+            $builder->setParameter('jsonapi_admitted_' . $index, $bound, $listType);
             ++$index;
         }
 

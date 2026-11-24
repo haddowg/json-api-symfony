@@ -34,7 +34,8 @@ final class ScopedArraySortHandler implements SortHandlerInterface, ReadsFilterP
     public function withPaths(FilterPaths $paths, \Closure $apply): mixed
     {
         $previous = $this->current;
-        $this->current = $this->handler->withRowAdmission($paths->rowAdmission());
+        $this->current = $this->handler->withRowAdmission($paths->rowAdmission())
+            ->withRelationReader($paths->relationReader());
 
         try {
             return $apply();
