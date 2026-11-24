@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\EncodedBinaryUuidTestKernel;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
+use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Uid\Uuid;
@@ -32,10 +34,15 @@ final class DoctrineEncodedBinaryUuidTest extends BinaryUuidConformanceTestCase
     }
 
     /**
-     * Odd notes hold the 16-byte storage key, even ones the canonical wire id.
+     * Odd notes hold the 16-byte storage key, even ones the canonical wire id. Only SQLite
+     * keeps raw bytes in a text column, so elsewhere every note holds the wire id.
      */
     protected function storedMorphKey(int $note, string $wireId): string
     {
-        return $note % 2 === 1 ? Uuid::fromString($wireId)->toBinary() : $wireId;
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+        $sqlite = $entityManager->getConnection()->getDatabasePlatform() instanceof SQLitePlatform;
+
+        return $sqlite && $note % 2 === 1 ? Uuid::fromString($wireId)->toBinary() : $wireId;
     }
 }

@@ -27,7 +27,9 @@ final class DoctrineBinaryUuidTest extends BinaryUuidConformanceTestCase
 
         $distinct = \array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'select distinct'));
         self::assertSame([], $distinct, "no stored ids are read first:\n" . \implode("\n", $statements));
-        $compared = \array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'from uuid_note') && \str_contains($sql, 'hex(') && \str_contains($sql, 'from uuid_label'));
+        // hex() on SQLite, BIN_TO_UUID() on MySQL 8 and a cast on PostgreSQL.
+        $asText = static fn(string $sql): bool => \str_contains($sql, 'hex(') || \str_contains($sql, 'bin_to_uuid(') || \str_contains($sql, 'as text)');
+        $compared = \array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'from uuid_note') && $asText($sql) && \str_contains($sql, 'from uuid_label'));
         self::assertCount(1, $compared, "one statement compares the ids as text:\n" . \implode("\n", $statements));
     }
 
