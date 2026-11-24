@@ -67,8 +67,9 @@ to `/data/attributes/<name>` without first reshaping the entity. The work lives 
 [`ResourceValidator::validate()`](../src/Validation/ResourceValidator.php).
 
 For each attribute field (the `Id` field and relationships are not attributes, so
-they are validated separately — see [id format, below](#id-format-both-directions)
-and [to-many member counts](#to-many-member-counts);
+they are validated separately — see [id format, below](#id-format-both-directions),
+[required relationships](#required-relationships) and
+[to-many member counts](#to-many-member-counts);
 read-only fields are skipped per create/update context), the bridge builds one
 Symfony `Collection` field entry, then validates the attributes array against a
 `Collection(fields: …, allowExtraFields: true)` — unknown attributes are ignored,
@@ -251,6 +252,36 @@ must carry it; an existing member need not re-send it) and
 `Integer::make('weight')->compareWith('position', …)` (compared against the *merged*
 pivot, so `weight` may be set without re-sending `position`). See
 [relationships.md](relationships.md#writing-pivot-data) for the write convention.
+
+## Required relationships
+
+A relation declared `required()`, `requiredOnCreate()` or `requiredOnUpdate()` is held
+to the same rule as a required attribute, before hydration and before any write hook
+runs. A create must send it, so leaving it out of `data.relationships`, or sending no
+`relationships` member at all, is a `422` at `/data/relationships/<rel>` with Symfony's
+"This field is missing." A write that does send it may not send it empty, on a create or
+on an update where it is required: a `null` to-one is "This value should not be null."
+and an empty to-many "This value should not be blank.", both at
+`/data/relationships/<rel>/data`. An update may still leave it out.
+
+```php
+BelongsTo::make('owner', 'members')->required(),
+BelongsToMany::make('watchers', 'members')->requiredOnCreate(),
+
+// POST /tasks with no `owner`                    → 422 at /data/relationships/owner
+// POST /tasks with "watchers": {"data": []}       → 422 at /data/relationships/watchers/data
+// PATCH /tasks/1 with "owner": {"data": null}     → 422 at /data/relationships/owner/data
+// PATCH /tasks/1/relationships/owner, "data": null → 422 at /data
+```
+
+A full replacement through `PATCH …/relationships/{rel}` is an update, so a relation
+required on update can't be emptied there either. Adding `nullable()` lets a required
+to-one be sent as `null`; it still has to be sent on a create. A required to-many that
+also declares `minItems(1)` reports an empty set once, with the bound's message. A
+relation read-only for the caller isn't checked. Atomic operations and custom actions
+taking a resource document run the same check, the atomic pointer carrying the
+operation's prefix. Without `symfony/validator` the check doesn't run, as with every
+other declared rule.
 
 ## To-many member counts
 
