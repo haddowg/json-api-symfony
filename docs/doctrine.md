@@ -787,12 +787,14 @@ A few translations carry nuance:
 - **A scoped `WhereMorph` admits ids as a related read does.** When the requested type has
   query extensions, requested ids are admitted with one id query through the type's
   encoder and its id's Doctrine type, as `GET /{type}/{id}/{relation}` loads them, and only
-  the admitted ids are bound. With no ids sent, a type whose id column holds the value as
-  it is (`integer`, `bigint`, `smallint`, `string`, `ascii_string`, `guid` or `text`) and
-  that declares no encoder is kept to `idCol IN (<the admitted ids>)` as a subquery. Any
-  other type, such as a binary `uuid` or an encoded id, first reads the distinct ids of that
-  type the column holds, admits them the same way and binds the result, one extra query
-  bounded by the targets the rows name rather than by the target table.
+  the admitted ids are bound. With no ids sent, a type that declares no encoder and whose id
+  column is of the same family as `idCol`, both integers (`integer`, `bigint`, `smallint`)
+  or both text (`string`, `ascii_string`, `text`), is kept to
+  `idCol IN (<the admitted ids>)` as a subquery. Any other type first reads the distinct ids
+  of that type the column holds, admits them the same way and binds the result, one extra
+  query bounded by the targets the rows name rather than by the target table. That covers a
+  binary `uuid`, a `guid` that PostgreSQL keeps as a native uuid, an encoded id, and an
+  integer id under a text column, which PostgreSQL has no comparison for.
 - **`WhereAll`/`WhereAny` recombine their children with `andX()`/`orX()`.** A
   [server-composed group](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-groups-whereall--whereany) is applied by
   running each child through the **same** dispatch a top-level filter uses — fanning
