@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use Doctrine\DBAL\Logging\Middleware as DbalLoggingMiddleware;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Routing\OpenApiRouteLoader;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use haddowg\JsonApiBundle\Tests\Functional\App\ThroughIn\ThroughInKernelConfig;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
@@ -81,6 +84,12 @@ final class MorphKeysDoctrineKernel extends Kernel
             ->defaults()
             ->autowire()
             ->autoconfigure();
+
+        // The executed statements, so a test can tell which way a scoped filter compared ids.
+        $services->set(QueryCountingLogger::class)->public();
+        $services->set(DbalLoggingMiddleware::class)
+            ->args([new Reference(QueryCountingLogger::class)])
+            ->tag('doctrine.middleware');
 
         foreach ([DoctrineMkNoteResource::class, DoctrineMkCounterResource::class, DoctrineMkBadgeResource::class, DoctrineMkTokenResource::class, HiddenTargetsExtension::class] as $class) {
             $services->set($class);

@@ -131,10 +131,9 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * naming the seam that would handle it, so the 500's message points at the fix.
      */
     /**
-     * Doctrine types that keep an id in the database as the value itself, so a stored morph
-     * id compares with it in SQL.
+     * Doctrine types of an integer column a stored morph id or a target id may be kept in.
      */
-    private const array AS_IS_ID_TYPES = ['integer', 'bigint', 'smallint', 'string', 'ascii_string', 'guid', 'text'];
+    private const array INTEGER_ID_TYPES = ['integer', 'bigint', 'smallint'];
 
     /**
      * Doctrine types of a text column a stored morph id may be kept in.
@@ -411,14 +410,14 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         $metadata = $query->getEntityManager()->getClassMetadata($class);
-        if (($forms === null && $this->storesIdAsIs($metadata, $target, $type)) || !$paths->admitsMorphTargets()) {
+        $owner = $this->metadataOfAlias($predicateOn, $alias);
+        if (($forms === null && $this->comparesInSql($owner, $idField, $metadata, $target, $type)) || !$paths->admitsMorphTargets()) {
             $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request());
 
             return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $admitted));
         }
 
         $keys = $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField);
-        $owner = $this->metadataOfAlias($predicateOn, $alias);
         $admitted = $this->comparableIds($owner, $idField, $paths->admitMorphTargets($relation, $type, $keys));
         if ($admitted === []) {
             return $predicateOn->andWhere('1 = 0');
@@ -431,22 +430,33 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     }
 
     /**
-     * Whether the targets of `$type` keep their id in a column a stored morph id compares
-     * with directly in SQL: a single id of a type that stores the value as it is, and no id
-     * encoder, so the storage key and the wire id are the same value.
+     * Whether a stored morph id compares with the targets of `$type` directly in SQL: a
+     * single id and no id encoder, so the storage key and the wire id are the same value,
+     * and a morph column and a target id column of one family, both integers or both text.
+     * A text column against an integer id is not comparable on every database, PostgreSQL
+     * has no comparison between them, so it takes the admitted id list instead.
      *
-     * @param ClassMetadata<object> $metadata
+     * @param ClassMetadata<object>|null $owner  the entity holding the morph id
+     * @param ClassMetadata<object>      $target the entity serving `$type`
      */
-    private function storesIdAsIs(ClassMetadata $metadata, ?MorphTarget $target, string $type): bool
+    private function comparesInSql(?ClassMetadata $owner, string $idField, ClassMetadata $target, ?MorphTarget $morphTarget, string $type): bool
     {
-        if ($metadata->isIdentifierComposite) {
+        if ($target->isIdentifierComposite) {
             return true;
         }
-        if (($target?->ids[$type] ?? null)?->encoder() !== null) {
+        if (($morphTarget?->ids[$type] ?? null)?->encoder() !== null || $owner === null || !$owner->hasField($idField)) {
             return false;
         }
 
-        return \in_array($metadata->getTypeOfField($metadata->getSingleIdentifierFieldName()), self::AS_IS_ID_TYPES, true);
+        $family = static fn(?string $type): ?string => match (true) {
+            \in_array($type, self::INTEGER_ID_TYPES, true) => 'integer',
+            // A guid is a native uuid column on PostgreSQL, which compares with no text column.
+            \in_array($type, self::TEXT_ID_TYPES, true) && $type !== 'guid' => 'text',
+            default => null,
+        };
+        $stored = $family($owner->getTypeOfField($idField));
+
+        return $stored !== null && $stored === $family($target->getTypeOfField($target->getSingleIdentifierFieldName()));
     }
 
     /**
@@ -497,7 +507,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private function comparableIds(?ClassMetadata $metadata, string $idField, array $values): array
     {
         $type = $metadata !== null && $metadata->hasField($idField) ? $metadata->getTypeOfField($idField) : null;
-        if (\in_array($type, ['integer', 'bigint', 'smallint'], true)) {
+        if (\in_array($type, self::INTEGER_ID_TYPES, true)) {
             return \array_values(\array_filter($values, static fn(mixed $value): bool => \is_int($value) || (\is_string($value) && \preg_match('/^-?\d+$/', $value) === 1)));
         }
         if (\in_array($type, self::TEXT_ID_TYPES, true)) {
