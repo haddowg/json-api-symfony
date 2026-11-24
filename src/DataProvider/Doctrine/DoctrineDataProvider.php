@@ -2964,7 +2964,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->relatedExtensions($relatedType, $request)->scope($builder, 'related');
         $builder = $this->applier->apply($this->filtersOnly($criteria), $builder, $this->filterHandler, $this->sortHandler, 'related');
         $builder
-            ->select(\sprintf('%s AS %s', $scope->expression('related'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->select(\sprintf('%s AS %s', $scope->discriminator('related'), BatchScope::PARENT_DISCRIMINATOR_ALIAS))
             ->addSelect(\sprintf('COUNT(DISTINCT %s) AS jsonapi_count', DoctrineIdentifiers::path($relatedMetadata, 'related')))
             ->groupBy(BatchScope::PARENT_DISCRIMINATOR_ALIAS);
 

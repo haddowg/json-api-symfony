@@ -429,24 +429,30 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $owner = $this->metadataOfAlias($predicateOn, $alias);
         $comparison = $forms === null ? $this->sqlComparison($query, $owner, $idField, $metadata, $target, $type) : null;
         if ($comparison !== null || !$paths->admitsMorphTargets()) {
-            $function = null;
-            $stored = $this->path($idField, $alias);
+            // The column is compared as it is, so an index on it serves the query. A uuid read as
+            // text, or a guid kept as text, is matched in lower and in upper case on the
+            // target's side, since the column may keep it either way.
+            $functions = [null];
             if ($comparison === self::COMPARE_AS_UUID_TEXT) {
                 $configuration = $query->getEntityManager()->getConfiguration();
                 if ($configuration->getCustomStringFunction(UuidText::FUNCTION) === null) {
                     $configuration->addCustomStringFunction(UuidText::FUNCTION, UuidTextFunction::class);
                 }
-                $function = UuidText::FUNCTION;
-                // The uuid reads as lower-case text, and a text column may keep it in either case.
-                $stored = \sprintf('LOWER(%s)', $stored);
+                $functions = [UuidText::FUNCTION, 'UPPER(' . UuidText::FUNCTION . '(%s))'];
             } elseif ($comparison === self::COMPARE_AS_STORED && !$metadata->isIdentifierComposite && $metadata->getTypeOfField($metadata->getSingleIdentifierFieldName()) === 'guid') {
-                // A guid kept as text compares in either case on both sides.
-                $function = 'LOWER';
-                $stored = \sprintf('LOWER(%s)', $stored);
+                $functions = ['LOWER', 'UPPER'];
             }
-            $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request(), $function);
+            $stored = $this->path($idField, $alias);
+            $predicates = [];
+            foreach ($functions as $function) {
+                $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request(), $function);
+                if ($admitted === null) {
+                    return $predicateOn;
+                }
+                $predicates[] = \sprintf('%s IN (%s)', $stored, $admitted);
+            }
 
-            return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $stored, $admitted));
+            return $predicateOn->andWhere(\count($predicates) === 1 ? $predicates[0] : $query->expr()->orX(...$predicates));
         }
 
         // A decoded key held as a value object, such as a Uuid, is admitted by its string form.

@@ -9,6 +9,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixSeed;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImNote;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -58,6 +59,43 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
     {
         self::assertSame(200, $this->handle('/im-notes?filter[guidOwner]=not-a-guid')->getStatusCode());
         self::assertSame(404, $this->handle('/im-guid-owners/not-a-guid/notes')->getStatusCode());
+    }
+
+    #[Test]
+    public function aMorphManyWhoseFormsDifferOnlyInCaseReadsAPageOfParentsInOneWindowedQuery(): void
+    {
+        $statements = $this->statementsOf('/im-uuid-owners?include=refNotes');
+        $refs = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'reftype in')));
+
+        self::assertCount(1, $refs, \implode("\n", $statements));
+        self::assertStringContainsString('row_number() over (partition by', $refs[0]);
+        self::assertStringContainsString('lower(i0_.refid) as', $refs[0]);
+        // The column itself is compared as stored, so an index on it serves the query.
+        self::assertStringContainsString('i0_.refid in (', $refs[0]);
+        self::assertStringNotContainsString('lower(i0_.refid) in', $refs[0]);
+    }
+
+    #[Test]
+    public function aMorphManyWhoseEncoderStoresAnotherFormReadsEachParentOnItsOwn(): void
+    {
+        $statements = $this->statementsOf('/im-prefix-owners?include=refNotes');
+        $refs = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'reftype in')));
+
+        self::assertSame([], \array_values(\array_filter($refs, static fn(string $sql): bool => \str_contains($sql, 'row_number()'))));
+        self::assertCount(3, $refs);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function statementsOf(string $path): array
+    {
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $logger->reset();
+        self::assertSame(200, $this->handle($path)->getStatusCode());
+
+        return \array_map('\strtolower', $logger->statements());
     }
 
     private function entityManager(): EntityManagerInterface

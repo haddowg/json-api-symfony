@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use Doctrine\DBAL\Logging\Middleware as DbalLoggingMiddleware;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\DependencyInjection\Loader\Configurator\DefaultsConfigurator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 use Zenstruck\Foundry\ZenstruckFoundryBundle;
@@ -131,6 +134,11 @@ class IdMatrixDoctrineTestKernel extends Kernel
         $dbal['types'] = [CodeType::NAME => CodeType::class];
         $container->extension('doctrine', ['dbal' => $dbal, 'orm' => $orm]);
         $services->set(ImHiddenRowsExtension::class);
+        // The executed statements, so a test can tell a windowed read from one per parent.
+        $services->set(QueryCountingLogger::class)->public();
+        $services->set(DbalLoggingMiddleware::class)
+            ->args([new Reference(QueryCountingLogger::class)])
+            ->tag('doctrine.middleware');
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

@@ -39,6 +39,7 @@ final class ForeignKeyScope
      * @param list<string>           $storedTypes the stored type values naming the parents' type
      * @param array<string, string>  $wireIdOf    each parent's key, in database form as a string, mapped to its wire id
      * @param list<mixed>            $bound       the parents' keys in their database form
+     * @param bool                   $oneFormEach whether each parent's keys differ only in letter case, so a lower-cased column partitions the rows by parent
      */
     private function __construct(
         private readonly DoctrineIdentifiers $ids,
@@ -49,6 +50,7 @@ final class ForeignKeyScope
         private readonly ForeignKeyParents $parents,
         private readonly array $wireIdOf,
         private readonly array $bound,
+        private readonly bool $oneFormEach = true,
     ) {}
 
     /**
@@ -64,23 +66,31 @@ final class ForeignKeyScope
 
         $wireIdOf = [];
         $bound = [];
+        $seen = [];
+        $oneFormEach = true;
         if ($typeColumn === null || $storedTypes !== []) {
             foreach ($parents->keys as $wireId => $key) {
                 // A polymorphic id column may hold the storage key or the wire id, a uuid in either case.
                 $forms = $typeColumn === null ? [$key] : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
+                $parentForms = [];
                 foreach ($forms as $form) {
                     $database = $ids->fieldToDatabase($relatedMetadata, $column, $form);
-                    $normalised = self::normalise($database, $typeColumn !== null);
-                    if ($normalised === null || isset($wireIdOf[$normalised])) {
+                    $exact = self::normalise($database);
+                    if ($exact === null || isset($seen[$exact])) {
                         continue;
                     }
+                    $seen[$exact] = true;
+                    $normalised = self::normalise($database, $typeColumn !== null);
+                    \assert($normalised !== null);
                     $wireIdOf[$normalised] = (string) $wireId;
+                    $parentForms[$normalised] = true;
                     $bound[] = $database;
                 }
+                $oneFormEach = $oneFormEach && \count($parentForms) <= 1;
             }
         }
 
-        return new self($ids, $relatedMetadata, $column, $typeColumn, $storedTypes, $parents, $wireIdOf, $bound);
+        return new self($ids, $relatedMetadata, $column, $typeColumn, $storedTypes, $parents, $wireIdOf, $bound, $oneFormEach);
     }
 
     /**
@@ -211,17 +221,45 @@ final class ForeignKeyScope
             }
         }
 
-        return new self($this->ids, $this->related, $this->column, $this->typeColumn, $this->storedTypes, $parents, $wireIdOf, $bound);
+        return new self($this->ids, $this->related, $this->column, $this->typeColumn, $this->storedTypes, $parents, $wireIdOf, $bound, $this->oneFormEach);
     }
 
     /**
-     * Whether each parent's rows hold its key in one form only, so a query can partition
-     * them by the foreign key column. A polymorphic id stored in either form, or a uuid in
-     * either case, gives one parent several values, and its rows are then read per parent.
+     * Whether a query can partition the rows by parent on {@see discriminator()}: each
+     * parent's key is held in one form, or in forms that differ only in letter case, which
+     * a text column's discriminator lower-cases. A polymorphic id an encoder stores in two
+     * really different forms, a prefixed wire id beside its storage key, can't be, and its
+     * rows are then read per parent.
      */
     public function partitionsByColumn(): bool
     {
+        if ($this->oneFormEach && ($this->typeColumn === null || $this->lowersColumn())) {
+            return true;
+        }
+
         return \count($this->bound) === \count(\array_unique($this->wireIdOf));
+    }
+
+    /**
+     * The DQL a query selects, partitions and groups the rows by as their parent: the
+     * foreign key, lower-cased for a polymorphic id kept as text, since such a column may
+     * keep one parent's key in either case. It is never compared in a WHERE, so an index on
+     * the column still serves the scope.
+     */
+    public function discriminator(string $alias): string
+    {
+        return $this->lowersColumn() ? \sprintf('LOWER(%s)', $this->expression($alias)) : $this->expression($alias);
+    }
+
+    /**
+     * Whether the discriminator lower-cases the column: a polymorphic id kept in a text
+     * field.
+     */
+    private function lowersColumn(): bool
+    {
+        return $this->typeColumn !== null
+            && $this->related->hasField($this->column)
+            && \in_array($this->related->getTypeOfField($this->column), self::TEXT_TYPES, true);
     }
 
     /**
@@ -249,7 +287,7 @@ final class ForeignKeyScope
     public function scope(QueryBuilder $builder, string $alias, bool $select = false): QueryBuilder
     {
         if ($select) {
-            $builder->addSelect(\sprintf('%s AS %s', $this->expression($alias), BatchScope::PARENT_DISCRIMINATOR_ALIAS));
+            $builder->addSelect(\sprintf('%s AS %s', $this->discriminator($alias), BatchScope::PARENT_DISCRIMINATOR_ALIAS));
         }
 
         if ($this->bound === []) {
@@ -285,8 +323,8 @@ final class ForeignKeyScope
     }
 
     /**
-     * A database value as the string it is keyed by: a polymorphic id compares a uuid in
-     * any case, any other key exactly.
+     * A database value as the string it is keyed by: a polymorphic id in lower case, since
+     * its column may keep a key in either case, any other key exactly.
      */
     private static function normalise(mixed $value, bool $polymorphic = false): ?string
     {
@@ -294,6 +332,6 @@ final class ForeignKeyScope
             return null;
         }
 
-        return $polymorphic && !\is_bool($value) && !\is_float($value) ? StoredIdForms::comparable($value) : (string) $value;
+        return $polymorphic ? \strtolower((string) $value) : (string) $value;
     }
 }

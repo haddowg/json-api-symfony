@@ -161,8 +161,10 @@ They build the same `HasMany` and `HasOne` as naming the `MorphTo` with `HasMany
 or `HasOne::make()`, and warm-up refuses them unless the member is a `MorphTo`. On
 Doctrine it must be declared with `identifiedByColumns()`. The id field may hold the
 parent's storage key or its wire id, and a uuid in either case, and every read matches
-all of them. When a parent's key can be stored in more than one form, its pages are read
-one parent at a time rather than in one windowed query.
+all of them. A page of parents is still read in one windowed query, partitioned by the
+lower-cased column, when each parent's forms differ only in letter case. Only where an id
+encoder stores a really different form, such as a prefixed wire id beside the storage
+key, are a parent's pages read one parent at a time.
 
 Every read and filter of the relation then keeps both fields: the type field to the
 stored values naming `posts`, and the id field to the posts' keys, so a video's notes
@@ -1897,7 +1899,9 @@ The id field may also hydrate to a value object, as a `uuid` column gives a `Uui
 string form is the stored id, so the linkage renders without a getter that returns a
 string, and `WhereMorph` binds a requested id through the column's own type. A uuid a text
 column keeps in capitals renders in lower case, as the target does, and the related
-endpoint, the include and `WhereMorph` match it whatever its case.
+endpoint, the include and `WhereMorph` match it. The column is compared as stored, with
+the lower-case and upper-case forms bound, so an index on it still serves the query, and a
+column that mixes case within one id doesn't match.
 
 The same two fields let each target type read its rows back with a `HasMany` or `HasOne`
 that names the `MorphTo` as its foreign key, as

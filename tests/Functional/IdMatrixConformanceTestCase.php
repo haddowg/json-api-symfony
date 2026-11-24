@@ -210,6 +210,16 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aMorphManyMatchesAUuidStoredInCapitals(): void
+    {
+        $owners = $this->rowsById($this->fetch('/im-uuid-owners?include=refNotes'));
+
+        self::assertSame(['3'], $this->ids($this->relationship($owners[IdMatrixSeed::wireId('uuid', 1)] ?? null, 'refNotes')['data'] ?? null));
+        self::assertSame([], $this->ids($this->relationship($owners[IdMatrixSeed::wireId('uuid', 0)] ?? null, 'refNotes')['data'] ?? null));
+        self::assertSame(['3'], $this->ids($this->fetch($this->owner('uuid', 1) . '/refNotes')['data'] ?? null));
+    }
+
+    #[Test]
     public function linkRowsWhoseIdColumnHoldsAUuidRenderAndIncludeTheirMembers(): void
     {
         [$first, $second, $third] = [IdMatrixSeed::wireId('uuid', 0), IdMatrixSeed::wireId('uuid', 1), IdMatrixSeed::wireId('uuid', 2)];

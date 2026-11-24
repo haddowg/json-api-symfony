@@ -530,6 +530,9 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 }
                 $isPivot = $hop->relation instanceof \haddowg\JsonApi\Resource\Field\BelongsToMany && $hop->relation->storedPivotFields() !== [];
                 $foreignKey = $paths->foreignKeyOf($hop->relation);
+                if ($foreignKey !== null && $item instanceof SortInterface) {
+                    throw $refuse(\sprintf('the relation "%s" reads through the foreign key "%s", which a sort can\'t join as one row per parent.', $hop->relation->name(), $foreignKey->name));
+                }
                 if ($foreignKey !== null) {
                     // A hop over a foreign key compares the key with the owner's id in SQL.
                     if (!ForeignKeyScope::comparableInSql($this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), $foreignKey, $hop->parentType, $current)) {
