@@ -21,6 +21,10 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * Judges a caller against an operation's security rule with Symfony Security, the way the
  * bundle enforces it, without performing the operation.
  *
+ * Each of the operation's additional gates is judged the same way as its primary rule,
+ * and one that denies the caller makes the operation {@see SecurityVerdict::Denied}
+ * whatever the others answer.
+ *
  * A rule that reads the resource ({@see SecurityLevel::Entity}) is
  * {@see SecurityVerdict::Depends}. No rule, or `false`, is
  * {@see SecurityVerdict::Allowed}. An expression is evaluated with no resource, and
@@ -49,8 +53,23 @@ final class ExpressionSecurityEvaluator implements SecurityEvaluatorInterface
      */
     public function evaluate(OperationDefinition $operation, ?object $user = null): SecurityVerdict
     {
-        $rule = $operation->security;
-        if ($operation->securityLevel === SecurityLevel::Entity) {
+        $verdict = $this->judge($operation->security, $operation->securityLevel, $user);
+        foreach ($operation->additionalGates as $gate) {
+            if ($verdict === SecurityVerdict::Denied) {
+                break;
+            }
+            $part = $this->judge($gate->expression, $gate->level, $user);
+            if ($part !== SecurityVerdict::Allowed) {
+                $verdict = $part;
+            }
+        }
+
+        return $verdict;
+    }
+
+    private function judge(string|bool|null $rule, SecurityLevel $level, ?object $user): SecurityVerdict
+    {
+        if ($level === SecurityLevel::Entity) {
             return SecurityVerdict::Depends;
         }
         if ($rule === null || $rule === false) {

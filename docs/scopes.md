@@ -208,9 +208,11 @@ foreach ($catalog->forServer('default') as $operation) {
 The rule is the one the bundle enforces: a type's `security*` declaration, a relation's
 read or mutate security over its parent's, or an action's `security`. A to-many's related
 and relationship reads also need the collection read security of every type the relation
-reaches, unless the relation declares its own read security, so their rule joins the
-parent's read and those collection gates with `and`. An expression that
-reads `object` or `subject` needs the resource, so the evaluator answers `Depends`. Any
+reaches, unless the relation declares its own read security. The definition lists those in
+`additionalGates`, one `AdditionalGate` per related type, beside the parent's read in
+`security`. An expression that reads `object` or `subject` needs the resource, so the
+evaluator answers `Depends` for it. It judges every additional gate as well, and one that
+refuses the caller makes the answer `Denied` even when the parent's read needs the resource. Any
 other expression is evaluated now, for the current caller when you pass no user, or for
 the user you pass. `true`, a firewall-enforced operation, needs an authenticated caller,
 and `false` or no rule is `Allowed`.
