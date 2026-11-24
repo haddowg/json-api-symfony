@@ -14,6 +14,7 @@ use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Authorization\UserAuthorizationCheckerInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\AuthenticatedVoter;
+use Symfony\Component\Security\Core\Exception\InvalidArgumentException;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
@@ -27,7 +28,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * authorization checker judges the current caller. With one, it judges that user through
  * `isGrantedForUser()` on Symfony 7.3 and later, and before that with a token for the user
  * swapped into the token storage for the call, so an `is_granted()` inside the
- * expression sees the same user.
+ * expression sees the same user. A rule that asks whether the user is authenticated also
+ * takes the swapped token on 7.3 and later, since the offline token `isGrantedForUser()`
+ * uses can't answer it.
  */
 final class ExpressionSecurityEvaluator implements SecurityEvaluatorInterface
 {
@@ -70,7 +73,14 @@ final class ExpressionSecurityEvaluator implements SecurityEvaluatorInterface
             throw new \InvalidArgumentException(\sprintf('The user to judge an operation for must be a %s, got %s.', UserInterface::class, \get_debug_type($user)));
         }
         if ($checker instanceof UserAuthorizationCheckerInterface) {
-            return $checker->isGrantedForUser($user, $attribute);
+            try {
+                return $checker->isGrantedForUser($user, $attribute);
+            } catch (InvalidArgumentException $e) {
+                // The offline token it judges with can't answer whether the user is authenticated.
+                if ($this->tokenStorage === null) {
+                    throw $e;
+                }
+            }
         }
 
         $storage = $this->tokenStorage ?? throw new \LogicException('Judging an operation\'s security for a given user needs symfony/security-bundle with a firewall configured.');

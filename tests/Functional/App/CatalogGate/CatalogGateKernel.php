@@ -98,11 +98,11 @@ final class CatalogGateKernel extends Kernel
 
         $services = $container->services()->defaults()->autowire()->autoconfigure();
         $services->set(AccessTokenHandler::class);
-        foreach ([HubResource::class, OwnedHubResource::class, SpokeResource::class, RimResource::class] as $class) {
+        foreach ([HubResource::class, OwnedHubResource::class, FirewalledHubResource::class, SpokeResource::class, RimResource::class] as $class) {
             $services->set($class);
         }
 
-        foreach (['hubs', 'ownedHubs', 'spokes', 'rims'] as $type) {
+        foreach (['hubs', 'ownedHubs', 'firewalledHubs', 'spokes', 'rims'] as $type) {
             $services->set('test.catalog_gate_provider.' . $type, \haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider::class)
                 ->autoconfigure(false)
                 ->factory([CatalogGateFixtures::class, 'provider'])

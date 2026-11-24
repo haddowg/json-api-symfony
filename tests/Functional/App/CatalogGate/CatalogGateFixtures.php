@@ -7,8 +7,8 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\CatalogGate;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 
 /**
- * Hub 1, owned by ada, holds spoke 1, rim 1 and leads with spoke 1. Owned hub 1 is
- * ada's too.
+ * Hub 1, owned by ada, holds spoke 1, rim 1 and leads with spoke 1. Owned hub 1 and
+ * firewalled hub 1 are the same hub.
  */
 final class CatalogGateFixtures
 {
@@ -17,7 +17,7 @@ final class CatalogGateFixtures
         $spoke = new Spoke(1, 'front');
         $rim = new Rim(1, 'outer');
         $items = match ($type) {
-            'hubs', 'ownedHubs' => ['1' => new Hub(1, 'ada', [$spoke], [$rim], $spoke)],
+            'hubs', 'ownedHubs', 'firewalledHubs' => ['1' => new Hub(1, 'ada', [$spoke], [$rim], $spoke)],
             'spokes' => ['1' => $spoke],
             default => ['1' => $rim],
         };
