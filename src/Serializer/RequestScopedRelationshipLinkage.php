@@ -84,6 +84,15 @@ final class RequestScopedRelationshipLinkage implements ToOneRelationshipLinkage
     }
 
     /**
+     * The first type whose collection read gate refuses the caller a related or
+     * relationship read through `$relation`, or `null` when none does or none applies.
+     */
+    public function refusedRelatedRead(RelationInterface $relation): ?string
+    {
+        return $this->rows?->refusedRelatedRead($relation);
+    }
+
+    /**
      * A related endpoint's to-one target, or `null` when the caller may not read it.
      * `$type` is the type the target renders as when the relation stores it.
      */

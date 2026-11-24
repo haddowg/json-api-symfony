@@ -86,7 +86,7 @@ final class RelationAuthorizer implements RelationAuthorizerInterface, ThroughRe
 
         // A list holds what its query returned, so a to-many is shown whole or not at
         // all: not when any type it relates to refuses the caller its collection.
-        return !$relation->isToMany() || $this->rows?->refusedCollectionType($relation, $this->serverName) === null;
+        return $this->rows?->refusedRelatedRead($relation, $this->serverName) === null;
     }
 
     public function canReadThrough(RelationHop $hop, JsonApiRequestInterface $request): bool
