@@ -13,13 +13,6 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'im_code_owner')]
 class ImCodeOwner
 {
-    /**
-     * The notes an in-memory WhereHas walks; Doctrine maps nothing here.
-     *
-     * @var list<ImNote>
-     */
-    public array $notes = [];
-
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: CodeType::NAME)]

@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApiBundle\DataProvider\ForeignKeyParents;
 
 /**
@@ -65,13 +66,17 @@ final class ForeignKeyScope
         $bound = [];
         if ($typeColumn === null || $storedTypes !== []) {
             foreach ($parents->keys as $wireId => $key) {
-                $database = $ids->fieldToDatabase($relatedMetadata, $column, $key);
-                $normalised = self::normalise($database);
-                if ($normalised === null) {
-                    continue;
+                // A polymorphic id column may hold the storage key or the wire id, a uuid in either case.
+                $forms = $typeColumn === null ? [$key] : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
+                foreach ($forms as $form) {
+                    $database = $ids->fieldToDatabase($relatedMetadata, $column, $form);
+                    $normalised = self::normalise($database, $typeColumn !== null);
+                    if ($normalised === null || isset($wireIdOf[$normalised])) {
+                        continue;
+                    }
+                    $wireIdOf[$normalised] = (string) $wireId;
+                    $bound[] = $database;
                 }
-                $wireIdOf[$normalised] = (string) $wireId;
-                $bound[] = $database;
             }
         }
 
@@ -200,13 +205,23 @@ final class ForeignKeyScope
         $wireIdOf = \array_filter($this->wireIdOf, static fn(string $candidate): bool => $candidate === $wireId);
         $bound = [];
         foreach ($this->bound as $database) {
-            $normalised = self::normalise($database);
+            $normalised = self::normalise($database, $this->typeColumn !== null);
             if ($normalised !== null && isset($wireIdOf[$normalised])) {
                 $bound[] = $database;
             }
         }
 
         return new self($this->ids, $this->related, $this->column, $this->typeColumn, $this->storedTypes, $parents, $wireIdOf, $bound);
+    }
+
+    /**
+     * Whether each parent's rows hold its key in one form only, so a query can partition
+     * them by the foreign key column. A polymorphic id stored in either form, or a uuid in
+     * either case, gives one parent several values, and its rows are then read per parent.
+     */
+    public function partitionsByColumn(): bool
+    {
+        return \count($this->bound) === \count(\array_unique($this->wireIdOf));
     }
 
     /**
@@ -264,13 +279,21 @@ final class ForeignKeyScope
             return null;
         }
 
-        $normalised = $this->ids->fieldKey($this->related, $this->column, $raw);
+        $normalised = self::normalise($this->ids->fieldToDatabase($this->related, $this->column, $raw), $this->typeColumn !== null);
 
         return $normalised === null ? null : ($this->wireIdOf[$normalised] ?? null);
     }
 
-    private static function normalise(mixed $value): ?string
+    /**
+     * A database value as the string it is keyed by: a polymorphic id compares a uuid in
+     * any case, any other key exactly.
+     */
+    private static function normalise(mixed $value, bool $polymorphic = false): ?string
     {
-        return \is_scalar($value) || $value instanceof \Stringable ? (string) $value : null;
+        if (!\is_scalar($value) && !$value instanceof \Stringable) {
+            return null;
+        }
+
+        return $polymorphic && !\is_bool($value) && !\is_float($value) ? StoredIdForms::comparable($value) : (string) $value;
     }
 }

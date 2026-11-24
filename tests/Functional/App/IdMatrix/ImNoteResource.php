@@ -29,12 +29,13 @@ abstract class ImNoteResource extends AbstractResource
             Str::make('subjectId')->hidden()->readOnly(),
             MorphTo::make('subject', ['im-posts', 'im-videos'])->identifiedByColumns(type: 'subjectType', id: 'subjectId')->nullable(),
             MorphTo::make('target', ['im-uuid-owners'])->identifiedByColumns(type: 'targetType', id: 'targetId')->nullable(),
+            MorphTo::make('ref', ['im-guid-owners', 'im-uuid-owners', 'im-prefix-owners'])->identifiedByColumns(type: 'refType', id: 'refId')->nullable(),
         ];
     }
 
     public function filters(): array
     {
-        $filters = [WhereMorph::make('target')];
+        $filters = [WhereMorph::make('target'), WhereMorph::make('ref')];
         foreach (self::FOREIGN_KEYS as $kind) {
             $filters[] = WhereIn::make($kind . 'Owner', $kind . 'OwnerId');
         }

@@ -8,8 +8,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixInMemoryTestKern
 
 /**
  * {@see IdMatrixConformanceTestCase} in memory, where rows hold the value objects a
- * Doctrine hydration gives. An existence filter here walks the `notes` the seed puts on
- * each owner, since the in-memory filter handler reads relations off the model.
+ * Doctrine hydration gives, and an existence filter reads a foreign-key relation through
+ * the related type's provider, as Doctrine does.
  */
 final class InMemoryIdMatrixTest extends IdMatrixConformanceTestCase
 {

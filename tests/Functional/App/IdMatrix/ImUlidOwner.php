@@ -14,13 +14,6 @@ use Symfony\Component\Uid\Ulid;
 #[ORM\Table(name: 'im_ulid_owner')]
 class ImUlidOwner
 {
-    /**
-     * The notes an in-memory WhereHas walks; Doctrine maps nothing here.
-     *
-     * @var list<ImNote>
-     */
-    public array $notes = [];
-
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'ulid')]

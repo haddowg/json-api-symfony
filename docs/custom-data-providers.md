@@ -458,6 +458,14 @@ key is a to-one relation (`$foreignKey->isRelation()`), the column holds a refer
 the parent, so compare the id it references. The parents may come from any provider, so
 read their keys from `ForeignKeyParents` rather than from your own storage.
 
+When the foreign key is a `MorphTo`, as a `MorphMany` or `MorphOne` names it,
+`$foreignKey->morphColumns()` returns its two fields: keep the type field to
+`morphColumns()->storedValues($parents->type)` as well as the id field to the parents'
+keys, or rows pointing at another type with the same id are read too. The id field may
+hold a parent's storage key or its wire id, so match both, as `StoredIdForms::forms()`
+lists them with `$parents->encoder`, and `$parents->wireIdOf()` maps a stored value back
+to its parent in any of those forms.
+
 A provider that can only scope its related reads to parents of some types implements
 [`ScopesToParentsInterface`](../src/DataProvider/ScopesToParentsInterface.php). The Doctrine
 provider answers `true` only for the types its entities map, and for any other parent

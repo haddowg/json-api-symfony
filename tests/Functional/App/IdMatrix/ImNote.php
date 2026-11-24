@@ -10,8 +10,9 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * A note pointing at an owner of every id kind through a plain field each, at a post or
- * a video through one polymorphic pair with an integer id, and at a uuid owner through a
- * polymorphic pair whose id is a `uuid` column.
+ * a video through one polymorphic pair with an integer id, at a uuid owner through a
+ * polymorphic pair whose id is a `uuid` column, and at a guid, uuid or prefixed owner
+ * through a text pair that may keep a uuid in capitals or an id in its wire form.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'im_note')]
@@ -47,5 +48,9 @@ class ImNote
         public ?string $targetType = null,
         #[ORM\Column(type: 'uuid', nullable: true)]
         public ?Uuid $targetId = null,
+        #[ORM\Column(type: 'string', nullable: true)]
+        public ?string $refType = null,
+        #[ORM\Column(type: 'string', length: 64, nullable: true)]
+        public ?string $refId = null,
     ) {}
 }

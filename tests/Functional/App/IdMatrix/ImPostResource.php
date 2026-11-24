@@ -5,17 +5,17 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix;
 
 use haddowg\JsonApi\Resource\AbstractResource;
-use haddowg\JsonApi\Resource\Field\HasMany;
-use haddowg\JsonApi\Resource\Field\HasOne;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\MorphMany;
+use haddowg\JsonApi\Resource\Field\MorphOne;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
 use haddowg\JsonApi\Resource\Filter\WhereThrough;
 
 /**
- * Reads its notes back through the notes' polymorphic `subject`, so a note of the other
- * owner type with the same id never counts.
+ * Reads its notes back through the notes' polymorphic `subject` with `MorphMany` and
+ * `MorphOne`, so a note of the other owner type with the same id never counts.
  */
 abstract class ImPostResource extends AbstractResource
 {
@@ -26,8 +26,8 @@ abstract class ImPostResource extends AbstractResource
         return [
             Id::make()->numeric(),
             Str::make('title'),
-            HasMany::make('notes', 'im-notes', 'subject')->withData()->countable(),
-            HasOne::make('firstNote', 'im-notes', 'subject')->withData(),
+            MorphMany::make('notes', 'im-notes', 'subject')->withData()->countable(),
+            MorphOne::make('firstNote', 'im-notes', 'subject')->withData(),
         ];
     }
 

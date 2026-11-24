@@ -349,6 +349,14 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
             return;
         }
+        if ($foreignKey->toOne instanceof \haddowg\JsonApi\Resource\Field\MorphTo) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" reads through the foreign key "%s", a MorphTo the Doctrine provider can only compare when it is declared with identifiedByColumns(). Declare the two fields it keeps its target in.',
+                $relation->name(),
+                $type,
+                $name,
+            ));
+        }
 
         $column = $foreignKey->column;
         $problem = null;

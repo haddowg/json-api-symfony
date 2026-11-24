@@ -421,6 +421,10 @@ final class DoctrineIdentifiers
             }
         }
 
+        // A type that passes a value object through, as a string column does, stores its string form.
+        if ($database instanceof \Stringable) {
+            $database = (string) $database;
+        }
         if ($database === null || !self::fitsNativeGuid($type, $platform, $database)) {
             return null;
         }

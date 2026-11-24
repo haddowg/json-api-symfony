@@ -14,13 +14,6 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'im_prefix_owner')]
 class ImPrefixOwner
 {
-    /**
-     * The notes an in-memory WhereHas walks; Doctrine maps nothing here.
-     *
-     * @var list<ImNote>
-     */
-    public array $notes = [];
-
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'uuid')]

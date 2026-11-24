@@ -102,16 +102,18 @@ final class IdMatrixSeed
         $notes = [$note(1, 'One', 0, 'im-posts', 1), $note(2, 'Two', 0, 'im-videos', 1), $note(3, 'Three', 1, 'im-posts', 1), $note(4, 'Four', null, 'im-videos', 2)];
         $notes[0]->targetType = 'im-uuid-owners';
         $notes[0]->targetId = $keys['uuid'][0];
-        foreach ($owners as $byIndex) {
-            $byIndex[0]->notes = [$notes[0], $notes[1]];
-            $byIndex[1]->notes = [$notes[2]];
-        }
+        // A text pair holding a guid and a uuid in capitals, and a prefixed owner in both stored forms.
+        $notes[1]->refType = 'im-guid-owners';
+        $notes[1]->refId = \strtoupper($keys['guid'][0]);
+        $notes[2]->refType = 'im-uuid-owners';
+        $notes[2]->refId = \strtoupper($keys['uuid'][1]->toRfc4122());
+        $notes[0]->refType = 'im-prefix-owners';
+        $notes[0]->refId = $keys['prefix'][0]->toRfc4122();
+        $notes[3]->refType = 'im-prefix-owners';
+        $notes[3]->refId = 'own_' . $keys['prefix'][0]->toRfc4122();
 
         $posts = [new ImPost(1, 'Post one'), new ImPost(2, 'Post two')];
         $videos = [new ImVideo(1, 'Video one'), new ImVideo(2, 'Video two')];
-        $posts[0]->notes = [$notes[0], $notes[2]];
-        $videos[0]->notes = [$notes[1]];
-        $videos[1]->notes = [$notes[3]];
 
         [$first, $second] = $owners[ImUuidOwner::class];
         $links = [

@@ -48,6 +48,7 @@ final class ScopedArrayFilterHandler implements FilterHandlerInterface, ReadsFil
     {
         $previous = $this->current;
         $this->current = $this->handler->withRowAdmission($paths->rowAdmission())
+            ->withRelationReader($paths->relationReader())
             ->withMorphAdmission(static fn(RelationInterface $relation, string $type, array $keys): array => $paths->admitMorphTargets($relation, $type, $keys));
 
         try {

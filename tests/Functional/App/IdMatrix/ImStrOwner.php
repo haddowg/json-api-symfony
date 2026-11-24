@@ -13,13 +13,6 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'im_str_owner')]
 class ImStrOwner
 {
-    /**
-     * The notes an in-memory WhereHas walks; Doctrine maps nothing here.
-     *
-     * @var list<ImNote>
-     */
-    public array $notes = [];
-
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'string')]

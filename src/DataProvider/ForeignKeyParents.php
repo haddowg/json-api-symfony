@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 
 /**
  * The page of parents a relation read through a foreign key answers, each keyed by its
@@ -62,9 +63,9 @@ final readonly class ForeignKeyParents
             return null;
         }
 
-        $wanted = (string) $key;
+        $wanted = StoredIdForms::comparable(\is_bool($key) || \is_float($key) ? (string) $key : $key);
         foreach ($this->keys as $wireId => $parentKey) {
-            if ((\is_scalar($parentKey) || $parentKey instanceof \Stringable) && (string) $parentKey === $wanted) {
+            if ((\is_int($parentKey) || \is_string($parentKey) || $parentKey instanceof \Stringable) && StoredIdForms::comparable($parentKey) === $wanted) {
                 return (string) $wireId;
             }
         }

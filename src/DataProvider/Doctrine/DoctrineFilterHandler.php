@@ -20,6 +20,7 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\Filter\DateRange;
 use haddowg\JsonApi\Resource\Filter\FilterHandlerInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -429,20 +430,29 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $comparison = $forms === null ? $this->sqlComparison($query, $owner, $idField, $metadata, $target, $type) : null;
         if ($comparison !== null || !$paths->admitsMorphTargets()) {
             $function = null;
+            $stored = $this->path($idField, $alias);
             if ($comparison === self::COMPARE_AS_UUID_TEXT) {
                 $configuration = $query->getEntityManager()->getConfiguration();
                 if ($configuration->getCustomStringFunction(UuidText::FUNCTION) === null) {
                     $configuration->addCustomStringFunction(UuidText::FUNCTION, UuidTextFunction::class);
                 }
                 $function = UuidText::FUNCTION;
+                // The uuid reads as lower-case text, and a text column may keep it in either case.
+                $stored = \sprintf('LOWER(%s)', $stored);
+            } elseif ($comparison === self::COMPARE_AS_STORED && !$metadata->isIdentifierComposite && $metadata->getTypeOfField($metadata->getSingleIdentifierFieldName()) === 'guid') {
+                // A guid kept as text compares in either case on both sides.
+                $function = 'LOWER';
+                $stored = \sprintf('LOWER(%s)', $stored);
             }
             $admitted = ExtensionScope::admitted($query, 'jsonapi_morph_scope_' . ++$this->subqueries, $metadata, $type, $extensions, $paths->request(), $function);
 
-            return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $this->path($idField, $alias), $admitted));
+            return $admitted === null ? $predicateOn : $predicateOn->andWhere(\sprintf('%s IN (%s)', $stored, $admitted));
         }
 
-        $keys = $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField);
-        $admitted = $this->comparableIds($query, $owner, $idField, $paths->admitMorphTargets($relation, $type, $keys));
+        // A decoded key held as a value object, such as a Uuid, is admitted by its string form.
+        $keys = \array_map(static fn(mixed $key): mixed => $key instanceof \Stringable ? (string) $key : $key, $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField));
+        // An admitted uuid-like id is bound in both cases, since a text column may keep either.
+        $admitted = $this->comparableIds($query, $owner, $idField, StoredIdForms::forms(null, $paths->admitMorphTargets($relation, $type, $keys)));
         if ($admitted === []) {
             return $predicateOn->andWhere('1 = 0');
         }
@@ -559,6 +569,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     private function comparableIds(QueryBuilder $query, ?ClassMetadata $metadata, string $idField, array $values): array
     {
         $type = $metadata !== null && $metadata->hasField($idField) ? $metadata->getTypeOfField($idField) : null;
+        // A key a decoder gives as a value object, such as a Uuid, is stored as its string form.
+        $values = \array_map(static fn(mixed $value): mixed => \is_object($value) && $value instanceof \Stringable ? (string) $value : $value, $values);
         if (\in_array($type, self::INTEGER_ID_TYPES, true)) {
             return \array_values(\array_filter($values, static fn(mixed $value): bool => \is_int($value) || (\is_string($value) && \preg_match('/^-?\d+$/', $value) === 1)));
         }

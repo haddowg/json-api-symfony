@@ -17,13 +17,6 @@ use Symfony\Component\Uid\Uuid;
 class ImUuidOwner
 {
     /**
-     * The notes an in-memory WhereHas walks; Doctrine maps nothing here.
-     *
-     * @var list<ImNote>
-     */
-    public array $notes = [];
-
-    /**
      * @var Collection<int, ImLink>
      */
     #[ORM\OneToMany(targetEntity: ImLink::class, mappedBy: 'owner')]

@@ -137,12 +137,15 @@ parent type behind an id encoder.
 A `WhereHas`, `WhereDoesntHave` or `->through()` path over such a relation joins the rows
 whose key names the row being filtered, so it needs SQL to compare the field with the
 parent's id column as stored. Warm-up refuses a filter reaching through one whose field
-and id column differ in type, other than both being integers or both text.
+and id column differ in type, other than both being integers or both text. Such a join
+compares the storage key, so a polymorphic id stored as the wire id of a type with an id
+encoder doesn't match there. The in-memory provider walks the same relation through the
+related type's provider, so its filters match what Doctrine's do.
 
 #### A foreign key through a polymorphic relation
 
 When the related rows point back through a `MorphTo` that keeps its target in two
-fields, name the `MorphTo` as the foreign key:
+fields, declare the inverse with `MorphMany` or `MorphOne`, naming the `MorphTo`:
 
 ```php
 // NoteResource
@@ -150,9 +153,16 @@ MorphTo::make('owner', ['posts', 'videos'])
     ->identifiedByColumns(type: 'ownerType', id: 'ownerId'),
 
 // PostResource
-HasMany::make('notes', 'notes', 'owner'),
-HasOne::make('latestNote', 'notes', 'owner'),
+MorphMany::make('notes', 'notes', 'owner'),
+MorphOne::make('latestNote', 'notes', 'owner'),
 ```
+
+They build the same `HasMany` and `HasOne` as naming the `MorphTo` with `HasMany::make()`
+or `HasOne::make()`, and warm-up refuses them unless the member is a `MorphTo`. On
+Doctrine it must be declared with `identifiedByColumns()`. The id field may hold the
+parent's storage key or its wire id, and a uuid in either case, and every read matches
+all of them. When a parent's key can be stored in more than one form, its pages are read
+one parent at a time rather than in one windowed query.
 
 Every read and filter of the relation then keeps both fields: the type field to the
 stored values naming `posts`, and the id field to the posts' keys, so a video's notes
@@ -1885,7 +1895,9 @@ The linkage, the related endpoint, the include and `WhereMorph` accept either, a
 
 The id field may also hydrate to a value object, as a `uuid` column gives a `Uuid`. Its
 string form is the stored id, so the linkage renders without a getter that returns a
-string, and `WhereMorph` binds a requested id through the column's own type.
+string, and `WhereMorph` binds a requested id through the column's own type. A uuid a text
+column keeps in capitals renders in lower case, as the target does, and the related
+endpoint, the include and `WhereMorph` match it whatever its case.
 
 The same two fields let each target type read its rows back with a `HasMany` or `HasOne`
 that names the `MorphTo` as its foreign key, as

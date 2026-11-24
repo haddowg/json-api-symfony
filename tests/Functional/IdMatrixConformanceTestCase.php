@@ -181,6 +181,35 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aUuidStoredInCapitalsRendersAndMatchesInLowerCase(): void
+    {
+        $guid = IdMatrixSeed::wireId('guid', 0);
+        $uuid = IdMatrixSeed::wireId('uuid', 1);
+
+        self::assertSame(['type' => 'im-guid-owners', 'id' => $guid], $this->relationship($this->fetch('/im-notes/2')['data'] ?? null, 'ref')['data'] ?? null);
+        self::assertSame(['type' => 'im-uuid-owners', 'id' => $uuid], $this->relationship($this->fetch('/im-notes/3')['data'] ?? null, 'ref')['data'] ?? null);
+        self::assertSame(['im-guid-owners:' . $guid], $this->includedKeys($this->fetch('/im-notes/2?include=ref')));
+        self::assertSame(['im-uuid-owners:' . $uuid], $this->includedKeys($this->fetch('/im-notes/3?include=ref')));
+        self::assertSame(['2'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-guid-owners&filter[ref][id]=' . $guid)['data'] ?? null));
+        self::assertSame(['2'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-guid-owners')['data'] ?? null));
+        self::assertSame(['3'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-uuid-owners&filter[ref][id]=' . $uuid)['data'] ?? null));
+        self::assertSame(['3'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-uuid-owners')['data'] ?? null));
+    }
+
+    #[Test]
+    public function aMorphManyMatchesAStoredIdInEitherForm(): void
+    {
+        $owner = $this->owner('prefix', 0);
+
+        self::assertSame(['1', '4'], $this->ids($this->fetch($owner . '/refNotes')['data'] ?? null));
+        self::assertSame(['1', '4'], $this->ids($this->relationship($this->fetch($owner)['data'] ?? null, 'refNotes')['data'] ?? null));
+        $owners = $this->rowsById($this->fetch('/im-prefix-owners?include=refNotes'));
+        self::assertSame(['1', '4'], $this->ids($this->relationship($owners[IdMatrixSeed::wireId('prefix', 0)] ?? null, 'refNotes')['data'] ?? null));
+        self::assertSame([], $this->ids($this->relationship($owners[IdMatrixSeed::wireId('prefix', 1)] ?? null, 'refNotes')['data'] ?? null));
+        self::assertSame(['1', '4'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-prefix-owners&filter[ref][id]=' . IdMatrixSeed::wireId('prefix', 0))['data'] ?? null));
+    }
+
+    #[Test]
     public function linkRowsWhoseIdColumnHoldsAUuidRenderAndIncludeTheirMembers(): void
     {
         [$first, $second, $third] = [IdMatrixSeed::wireId('uuid', 0), IdMatrixSeed::wireId('uuid', 1), IdMatrixSeed::wireId('uuid', 2)];
