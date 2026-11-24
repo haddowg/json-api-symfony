@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApi\Catalog\AdditionalGate;
 use haddowg\JsonApi\Catalog\OperationCatalog;
 use haddowg\JsonApi\Catalog\OperationDefinition;
 use haddowg\JsonApi\Catalog\SecurityEvaluatorInterface;
 use haddowg\JsonApi\Catalog\SecurityLevel;
 use haddowg\JsonApi\Catalog\SecurityVerdict;
+use haddowg\JsonApi\OpenApi\Metadata\OperationKind;
 use haddowg\JsonApiBundle\Tests\Functional\App\CatalogGate\CatalogGateKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -18,7 +20,7 @@ use Symfony\Component\Security\Core\User\InMemoryUser;
 /**
  * The catalogue judges a related or relationship read by every gate its endpoint
  * applies: the relation's read permission, else the parent's read gate and, for a
- * to-many, the collection read gate of each type it relates to. Each verdict is checked
+ * to-many, the collection read gate of each type it relates to, listed as additional gates. Each verdict is checked
  * against the answer the endpoint gives the same user.
  */
 #[Group('scopes')]
@@ -58,41 +60,53 @@ final class CatalogRelatedReadGateTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
-    public function aToManyCombinesTheParentReadWithEachRelatedCollectionGate(): void
+    public function aToManyListsEachRelatedCollectionGateBesideTheParentRead(): void
     {
         $spokes = $this->operation('hubs', 'fetchRelated.spokes');
-        self::assertSame("(is_granted('ROLE_USER')) and (is_granted('ROLE_ADMIN'))", $spokes->security);
+        self::assertSame("is_granted('ROLE_USER')", $spokes->security);
         self::assertSame(SecurityLevel::Type, $spokes->securityLevel);
+        self::assertEquals([new AdditionalGate('spokes', OperationKind::FetchCollection, "is_granted('ROLE_ADMIN')", SecurityLevel::Type)], $spokes->additionalGates);
+
+        self::assertEquals([new AdditionalGate('spokes', OperationKind::FetchCollection, "is_granted('ROLE_ADMIN')", SecurityLevel::Type)], $this->operation('hubs', 'fetchRelationship.parts')->additionalGates);
+        self::assertSame([], $this->operation('hubs', 'fetchRelated.rims')->additionalGates);
 
         $shared = $this->operation('hubs', 'fetchRelationship.sharedSpokes');
         self::assertSame("is_granted('ROLE_USER')", $shared->security);
+        self::assertSame([], $shared->additionalGates);
 
         $lead = $this->operation('hubs', 'fetchRelated.leadSpoke');
         self::assertSame("is_granted('ROLE_USER')", $lead->security);
         self::assertSame(SecurityLevel::Type, $lead->securityLevel);
+        self::assertSame([], $lead->additionalGates);
     }
 
     #[Test]
-    public function aParentReadThatReadsTheHubLeavesTheVerdictToTheHub(): void
+    public function aRefusingGateDeniesEvenWhenTheParentReadReadsTheHub(): void
     {
         $spokes = $this->operation('ownedHubs', 'fetchRelated.spokes');
-        self::assertSame("(object.owner == user.getUserIdentifier()) and (is_granted('ROLE_ADMIN'))", $spokes->security);
+        self::assertSame('object.owner == user.getUserIdentifier()', $spokes->security);
         self::assertSame(SecurityLevel::Entity, $spokes->securityLevel);
-        self::assertSame(SecurityVerdict::Depends, $this->evaluator()->evaluate($spokes, new InMemoryUser('ada', null, ['ROLE_USER'])));
-        $response = $this->handle('/ownedHubs/1/spokes', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer ada']);
-        self::assertSame(403, $response->getStatusCode());
+        self::assertCount(1, $spokes->additionalGates);
+
+        self::assertSame(SecurityVerdict::Denied, $this->evaluator()->evaluate($spokes, new InMemoryUser('ada', null, ['ROLE_USER'])));
+        self::assertSame(403, $this->handle('/ownedHubs/1/spokes', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer ada'])->getStatusCode());
+
+        self::assertSame(SecurityVerdict::Depends, $this->evaluator()->evaluate($spokes, new InMemoryUser('admin', null, ['ROLE_ADMIN', 'ROLE_USER'])));
     }
 
     #[Test]
-    public function aFirewalledParentReadJoinsAsAnAuthenticatedCaller(): void
+    public function aFirewalledParentReadNeedsAnAuthenticatedCallerBesideTheGates(): void
     {
         $spokes = $this->operation('firewalledHubs', 'fetchRelated.spokes');
-        self::assertSame("(is_authenticated()) and (is_granted('ROLE_ADMIN'))", $spokes->security);
+        self::assertTrue($spokes->security);
         self::assertSame(SecurityLevel::Type, $spokes->securityLevel);
-        self::assertTrue($this->operation('firewalledHubs', 'fetchRelationship.rims')->security);
+        self::assertCount(1, $spokes->additionalGates);
+        $rims = $this->operation('firewalledHubs', 'fetchRelationship.rims');
+        self::assertTrue($rims->security);
+        self::assertSame([], $rims->additionalGates);
 
         $evaluator = $this->evaluator();
-        self::assertSame(SecurityVerdict::Allowed, $evaluator->evaluate($this->operation('firewalledHubs', 'fetchRelationship.rims'), new InMemoryUser('ada', null, ['ROLE_USER'])));
+        self::assertSame(SecurityVerdict::Allowed, $evaluator->evaluate($rims, new InMemoryUser('ada', null, ['ROLE_USER'])));
         self::assertSame(SecurityVerdict::Allowed, $evaluator->evaluate($spokes, new InMemoryUser('admin', null, ['ROLE_ADMIN', 'ROLE_USER'])));
         self::assertSame(SecurityVerdict::Denied, $evaluator->evaluate($spokes, new InMemoryUser('ada', null, ['ROLE_USER'])));
         self::assertSame(SecurityVerdict::Denied, $evaluator->evaluate($spokes));
