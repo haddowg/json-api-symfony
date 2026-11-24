@@ -787,14 +787,20 @@ A few translations carry nuance:
 - **A scoped `WhereMorph` admits ids as a related read does.** When the requested type has
   query extensions, requested ids are admitted with one id query through the type's
   encoder and its id's Doctrine type, as `GET /{type}/{id}/{relation}` loads them, and only
-  the admitted ids are bound. With no ids sent, a type that declares no encoder and whose id
-  column is of the same family as `idCol`, both integers (`integer`, `bigint`, `smallint`)
-  or both text (`string`, `ascii_string`, `text`), is kept to
-  `idCol IN (<the admitted ids>)` as a subquery. Any other type first reads the distinct ids
-  of that type the column holds, admits them the same way and binds the result, one extra
-  query bounded by the targets the rows name rather than by the target table. That covers a
-  binary `uuid`, a `guid` that PostgreSQL keeps as a native uuid, an encoded id, and an
-  integer id under a text column, which PostgreSQL has no comparison for.
+  the admitted ids are bound. With no ids sent, a type that declares no encoder keeps one
+  subquery, `idCol IN (<the admitted ids>)`, when `idCol` and its id column are of one
+  family, both integers (`integer`, `bigint`, `smallint`) or both text (`string`,
+  `ascii_string`, `text`). A Symfony `uuid` id, and a `guid` PostgreSQL keeps as a native
+  uuid, also keep the subquery against a text `idCol`, with the id read as its canonical
+  lowercase text inside it: `BIN_TO_UUID()` on MySQL 8, a cast on PostgreSQL's native uuid,
+  and a `LOWER(HEX())` expression with dashes on MariaDB, older MySQL and SQLite. Only the
+  canonical lowercase text matches that way, which is what a uuid with no encoder stores.
+  Any other type, such as an encoded id, a `ulid`, an integer id under a text column, which
+  PostgreSQL has no comparison for, or a platform with none of those expressions, first
+  reads the distinct ids of that type the column holds, admits them the same way and binds
+  the result in lists of 2000 joined with `OR`, so a long list stays under the database's
+  parameter limit. That costs one extra query, bounded by the targets the rows name rather
+  than by the target table.
 - **`WhereAll`/`WhereAny` recombine their children with `andX()`/`orX()`.** A
   [server-composed group](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-groups-whereall--whereany) is applied by
   running each child through the **same** dispatch a top-level filter uses — fanning
