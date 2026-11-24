@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.24.0](https://github.com/haddowg/json-api-symfony/compare/v2.23.1...v2.24.0) (2026-11-24)
+
+
+### Features
+
+* list a related read's collection gates as additional gates in the catalogue ([#448](https://github.com/haddowg/json-api-symfony/issues/448)) ([181259f](https://github.com/haddowg/json-api-symfony/commit/181259f5860d63151e46fa853677a65a785ffec1))
+* support a HasMany, HasOne, MorphMany or MorphOne whose foreign key names a MorphTo identified by columns, checking both its type and id fields ([0e34e66](https://github.com/haddowg/json-api-symfony/commit/0e34e6654149e0f98ef35e900189faf55eacf5b0))
+
+
+### Bug Fixes
+
+* compare every key in its database form through its field's type ([0e34e66](https://github.com/haddowg/json-api-symfony/commit/0e34e6654149e0f98ef35e900189faf55eacf5b0))
+* drop a non-numeric value from an equality or IN filter on an integer column instead of letting the database compare it loosely ([0e34e66](https://github.com/haddowg/json-api-symfony/commit/0e34e6654149e0f98ef35e900189faf55eacf5b0))
+* judge a firewall-secured catalogue rule for a given user on Symfony 7.3 and later ([#446](https://github.com/haddowg/json-api-symfony/issues/446)) ([a983d00](https://github.com/haddowg/json-api-symfony/commit/a983d00e16a4c3eea84e50f83b6fac9b0addc3a7))
+* judge a to-many related read in the catalogue by every gate its endpoint applies ([#444](https://github.com/haddowg/json-api-symfony/issues/444)) ([a5926e7](https://github.com/haddowg/json-api-symfony/commit/a5926e703e89c560d8d73480744f3b7327aabb3d))
+* let a declared foreign key decide how WhereHas and through hops join, even where the entity also maps an association of that name ([0e34e66](https://github.com/haddowg/json-api-symfony/commit/0e34e6654149e0f98ef35e900189faf55eacf5b0))
+* match a polymorphic id whatever form it is stored in and however its target keeps its id ([#449](https://github.com/haddowg/json-api-symfony/issues/449)) ([e3d1262](https://github.com/haddowg/json-api-symfony/commit/e3d1262b2a34d88b76df4eb89021d2d70f3ead87))
+* refuse at warm-up a foreign key naming the bare id or type field of a polymorphic relation, which existing applications must change to name the MorphTo ([0e34e66](https://github.com/haddowg/json-api-symfony/commit/0e34e6654149e0f98ef35e900189faf55eacf5b0))
+* render a uuid-shaped stored polymorphic id in lower case and match it stored in either case ([0e34e66](https://github.com/haddowg/json-api-symfony/commit/0e34e6654149e0f98ef35e900189faf55eacf5b0))
+* treat a malformed guid as a missing row on a database with a native uuid column ([#450](https://github.com/haddowg/json-api-symfony/issues/450)) ([d2862eb](https://github.com/haddowg/json-api-symfony/commit/d2862eb4eba1798d3b85cdabab869e9c8096e7ee))
+
 ## [2.23.1](https://github.com/haddowg/json-api-symfony/compare/v2.23.0...v2.23.1) (2026-11-24)
 
 
