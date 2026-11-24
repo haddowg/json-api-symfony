@@ -22,9 +22,7 @@ final class UuidTextFunction extends FunctionNode
 
     public function getSql(SqlWalker $sqlWalker): string
     {
-        $path = $this->path instanceof Node ? $this->path->dispatch($sqlWalker) : $this->path;
-
-        return UuidText::sql($sqlWalker->getConnection()->getDatabasePlatform(), \is_string($path) ? $path : '');
+        return UuidText::sql($sqlWalker->getConnection()->getDatabasePlatform(), $this->path instanceof Node ? $this->path->dispatch($sqlWalker) : $this->path);
     }
 
     public function parse(Parser $parser): void

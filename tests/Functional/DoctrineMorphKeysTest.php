@@ -53,7 +53,9 @@ final class DoctrineMorphKeysTest extends MorphKeysConformanceTestCase
         }
 
         $ids = [];
-        foreach ($this->decode($response)['data'] ?? [] as $row) {
+        $rows = $this->decode($response)['data'] ?? null;
+        self::assertIsArray($rows);
+        foreach ($rows as $row) {
             self::assertIsArray($row);
             $ids[] = $row['id'] ?? null;
         }

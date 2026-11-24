@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
-use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\EncodedBinaryUuidTestKernel;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\EntityManagerInterface;
+use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\EncodedBinaryUuidTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Uid\Uuid;

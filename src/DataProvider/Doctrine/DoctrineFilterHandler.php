@@ -446,7 +446,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         // Bound in chunks, so a long list stays under the database's parameter limit.
         $path = $this->path($idField, $alias);
         $chunks = [];
-        foreach (\array_chunk($admitted, self::$morphIdChunk) as $chunk) {
+        foreach (\array_chunk($admitted, \max(1, self::$morphIdChunk)) as $chunk) {
             $placeholder = $this->placeholder($query);
             $query->setParameter($placeholder, ...$this->listParameter($query, $owner, $idField, $chunk));
             $chunks[] = \sprintf('%s IN (:%s)', $path, $placeholder);
