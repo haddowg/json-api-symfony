@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.23.1](https://github.com/haddowg/json-api-symfony/compare/v2.23.0...v2.23.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* refuse a write that leaves out or empties a required relationship ([#442](https://github.com/haddowg/json-api-symfony/issues/442)) ([4e507ce](https://github.com/haddowg/json-api-symfony/commit/4e507ce424daf11bf89d20f1958ca32bc4495ad1))
+
 ## [2.23.0](https://github.com/haddowg/json-api-symfony/compare/v2.22.2...v2.23.0) (2026-11-23)
 
 
