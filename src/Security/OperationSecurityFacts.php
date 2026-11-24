@@ -87,8 +87,9 @@ final class OperationSecurityFacts
             OperationKind::FetchRelated, OperationKind::FetchRelationship => $relation !== null && (
                 $relation->securityRead() !== null
                     ? self::gates($relation->securityRead())
-                    // A to-many is refused when the caller may not list a type it relates to.
-                    : self::gates($declared?->forRead()) || ($relation->isToMany() && $this->anyRelated($server, $relation, static fn(ResourceSecurity $s): string|bool|null => $s->forList()))
+                    // A to-many is refused when the caller may not list a type it relates to,
+                    // by the gates the endpoint itself applies.
+                    : self::gates($declared?->forRead()) || ($this->security?->relatedCollectionGates($relation, $server) ?? []) !== []
             ),
             OperationKind::UpdateRelationship, OperationKind::AddRelationship => $relation !== null && (
                 self::gates($relation->securityMutate() ?? $declared?->forUpdate()) || $this->movesMembers($server, $type, $relation)
@@ -203,21 +204,6 @@ final class OperationSecurityFacts
 
         return self::gates($descriptor->security)
             || ($descriptor->takesFilters() && self::gates($declared?->forList()));
-    }
-
-    /**
-     * @param \Closure(ResourceSecurity): (string|bool|null) $gate
-     */
-    private function anyRelated(string $server, RelationMetadataInterface $relation, \Closure $gate): bool
-    {
-        foreach ($relation->relatedTypes() as $related) {
-            $declared = $this->security?->securityFor($related, $server);
-            if ($declared !== null && \is_string($gate($declared))) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
