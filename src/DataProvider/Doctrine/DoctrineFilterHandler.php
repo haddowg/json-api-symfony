@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Doctrine\DBAL\Types\ConversionException;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -437,7 +438,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         $keys = $forms ?? $this->storedMorphIds($predicateOn, $alias, $typeField, $storedTypes, $idField);
-        $admitted = $this->comparableIds($owner, $idField, $paths->admitMorphTargets($relation, $type, $keys));
+        $admitted = $this->comparableIds($query, $owner, $idField, $paths->admitMorphTargets($relation, $type, $keys));
         if ($admitted === []) {
             return $predicateOn->andWhere('1 = 0');
         }
@@ -539,22 +540,27 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
     /**
      * The values among `$values` a stored id column of `$metadata` can hold. An integer
      * column keeps only integers and digit strings, so a wire id another form of the same
-     * key takes is not bound as a number it never was, and a text column compares each
-     * integer as its string, since a list binds as the type of its first value.
+     * key takes is not bound as a number it never was. A text column compares each integer
+     * as its string, since a list binds as the type of its first value, and on PostgreSQL,
+     * which refuses a text parameter that isn't UTF-8, drops a raw byte form no text column
+     * there can hold.
      *
      * @param ClassMetadata<object>|null $metadata
      * @param list<mixed>                $values
      *
      * @return list<mixed>
      */
-    private function comparableIds(?ClassMetadata $metadata, string $idField, array $values): array
+    private function comparableIds(QueryBuilder $query, ?ClassMetadata $metadata, string $idField, array $values): array
     {
         $type = $metadata !== null && $metadata->hasField($idField) ? $metadata->getTypeOfField($idField) : null;
         if (\in_array($type, self::INTEGER_ID_TYPES, true)) {
             return \array_values(\array_filter($values, static fn(mixed $value): bool => \is_int($value) || (\is_string($value) && \preg_match('/^-?\d+$/', $value) === 1)));
         }
         if (\in_array($type, self::TEXT_ID_TYPES, true)) {
-            return \array_values(\array_map(static fn(mixed $value): mixed => \is_int($value) ? (string) $value : $value, $values));
+            $postgres = $query->getEntityManager()->getConnection()->getDatabasePlatform() instanceof PostgreSQLPlatform;
+            $values = \array_map(static fn(mixed $value): mixed => \is_int($value) ? (string) $value : $value, $values);
+
+            return \array_values($postgres ? \array_filter($values, static fn(mixed $value): bool => !\is_string($value) || \mb_check_encoding($value, 'UTF-8')) : $values);
         }
 
         return \array_values($values);
@@ -581,7 +587,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         }
 
         $metadata = $this->metadataOfAlias($predicateOn, $alias);
-        $ids = $this->comparableIds($metadata, $idField, $ids);
+        $ids = $this->comparableIds($bindOn, $metadata, $idField, $ids);
         if ($ids === []) {
             return $predicateOn->andWhere('1 = 0');
         }
