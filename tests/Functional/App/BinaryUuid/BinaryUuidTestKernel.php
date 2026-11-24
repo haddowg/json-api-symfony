@@ -110,6 +110,7 @@ class BinaryUuidTestKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
+        $services->set(UuidNoteResource::class);
         foreach ([UuidShelfResource::class, UuidBookResource::class, UuidLabelResource::class] as $resource) {
             $service = $services->set($resource);
             if ($this->encodesIds()) {

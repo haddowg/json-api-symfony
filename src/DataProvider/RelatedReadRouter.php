@@ -20,6 +20,7 @@ use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Schema\Relationship\IdentifiedMember;
@@ -316,14 +317,12 @@ final class RelatedReadRouter implements ResetInterface
         $serializer = $server->serializerFor($type);
         $byWireId = [];
         foreach ($keys as $key) {
-            $byWireId[self::wireId($serializer, $key)] = $key;
+            $byWireId[self::wireId($serializer, $key)][] = $key;
         }
 
         $admitted = [];
         foreach ($this->admitIds($type, $serializer, \array_map('strval', \array_keys($byWireId)), $request) as $id) {
-            if (isset($byWireId[$id])) {
-                $admitted[] = $byWireId[$id];
-            }
+            \array_push($admitted, ...$byWireId[$id] ?? []);
         }
 
         return $admitted;
@@ -917,15 +916,15 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
-     * A stored key as `$serializer` renders it: through its id field's encoder when it
-     * declares one, as core renders the pair's linkage.
+     * A stored id, the storage key or the wire id, as `$serializer` renders it: through
+     * its id field's encoder when it declares one, as core renders the pair's linkage.
      */
     public static function wireId(SerializerInterface $serializer, string|int $id): string
     {
         if ($serializer instanceof AbstractResource) {
             foreach ($serializer->allFields() as $field) {
                 if ($field instanceof Id) {
-                    return $field->encoder()?->encode($id) ?? (string) $id;
+                    return StoredIdForms::wireId($field->encoder(), $id);
                 }
             }
         }

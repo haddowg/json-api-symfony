@@ -803,7 +803,8 @@ identifier lives. A `MorphTo` declares
 provider compares those two columns on the main query. A `MorphToMany` declares
 [`identifiedByRows()`](#declaring-the-link-rows-with-identifiedbyrows), and the filter is one
 correlated `EXISTS` over its `through()` entity. The in-memory provider compares the same
-fields through core's `ArrayFilterHandler`. A `WhereMorph` over a `MorphTo` identified only
+fields through core's `ArrayFilterHandler`. A requested id matches a stored storage key or a
+stored wire id. A `WhereMorph` over a `MorphTo` identified only
 by an `identifiedBy()` closure fails `cache:warmup` on Doctrine, since a closure can't be
 compared in a query.
 
@@ -1838,6 +1839,12 @@ filter needs. The example's
 [`FavoriteResource`](../examples/music-catalog-symfony/src/Resource/FavoriteResource.php)
 declares its `favoritable` relation this way and filters by it with
 `filter[favoritable][type]=albums&filter[favoritable][id]=1`.
+
+The id column may hold the target's storage key or its wire id. They differ only when the
+target's type declares an [id encoder](https://github.com/haddowg/json-api/blob/main/docs/ids.md#encoding-when-the-wire-id-differs-from-the-storage-key),
+and a text column that holds the ids of several kinds of target often keeps the wire form.
+The linkage, the related endpoint, the include and `WhereMorph` accept either, and so do a
+`MorphToMany`'s link rows. Link rows the bundle writes hold the storage key.
 
 A loaded target renders under the pair's type, and the read gate, the related endpoint
 and the include walk all treat it as that type. The declared types' resources don't need

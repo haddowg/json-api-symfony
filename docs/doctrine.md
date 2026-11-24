@@ -735,7 +735,7 @@ so the same spec test passes on both providers.
 | `WhereNotIn` / `WhereIdNotIn` | `col NOT IN (:list)` |
 | `WhereNull` / `WhereNotNull` | `col IS NULL` / `col IS NOT NULL` (request value ignored) |
 | `WhereSet` | `col IS NOT NULL` for `true`, `col IS NULL` for `false`, no predicate for both |
-| `WhereMorph` over a `MorphTo` | `typeCol IN (:types)` and, when ids are sent, `idCol IN (:ids)` on the columns `identifiedByColumns()` names; `idCol` is also kept to the ids the requested type's query extensions admit, when it has any |
+| `WhereMorph` over a `MorphTo` | `typeCol IN (:types)` and, when ids are sent, `idCol IN (:ids)` on the columns `identifiedByColumns()` names, each id bound as its storage key and its wire id; `idCol` is also kept to the ids the requested type's query extensions admit, when it has any |
 | `WhereMorph` over a `MorphToMany` | a correlated `EXISTS` over the `through()` entity `identifiedByRows()` names, its owner the outer row, its type and id compared and scoped as for a `MorphTo` |
 | `WhereHas` / `WhereDoesntHave` | correlated `EXISTS` / `NOT EXISTS` subquery |
 | any of the above with `->through()` | one correlated `EXISTS` joining each relation of the path, each reached entity kept to the rows its type's query extensions admit, with the filter's own translation applied to the last one |
@@ -781,8 +781,18 @@ A few translations carry nuance:
   [`identifiedByColumns()`](relationships.md#a-morphto-stored-as-a-type-and-id-pair) and a
   `MorphToMany` must declare `identifiedByRows()`, since a closure from `identifiedBy()`
   can't be compared in a query. The stored type values come from the declared `typeMap`,
-  or are the JSON:API type itself, and each id is decoded through its type's encoder
-  before it is bound. A filter over a relation declaring neither fails `cache:warmup`.
+  or are the JSON:API type itself, and each id is decoded through its type's encoder and
+  bound in both forms, the storage key and the wire id, since the column may hold either.
+  A filter over a relation declaring neither fails `cache:warmup`.
+- **A scoped `WhereMorph` admits ids as a related read does.** When the requested type has
+  query extensions, requested ids are admitted with one id query through the type's
+  encoder and its id's Doctrine type, as `GET /{type}/{id}/{relation}` loads them, and only
+  the admitted ids are bound. With no ids sent, a type whose id column holds the value as
+  it is (`integer`, `bigint`, `smallint`, `string`, `ascii_string`, `guid` or `text`) and
+  that declares no encoder is kept to `idCol IN (<the admitted ids>)` as a subquery. Any
+  other type, such as a binary `uuid` or an encoded id, first reads the distinct ids of that
+  type the column holds, admits them the same way and binds the result, one extra query
+  bounded by the targets the rows name rather than by the target table.
 - **`WhereAll`/`WhereAny` recombine their children with `andX()`/`orX()`.** A
   [server-composed group](https://github.com/haddowg/json-api/blob/main/docs/filters.md#filter-groups-whereall--whereany) is applied by
   running each child through the **same** dispatch a top-level filter uses — fanning
