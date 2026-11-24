@@ -37,6 +37,14 @@ abstract class MorphKeysConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aMorphToMatchesAStringIdTheScopeAdmits(): void
+    {
+        self::assertSame(['10'], $this->noteIds('filter[subject][type]=mkCodes'));
+        self::assertSame(['10'], $this->noteIds('filter[subject][type]=mkCodes&filter[subject][id]=alpha'));
+        self::assertSame([], $this->noteIds('filter[subject][type]=mkCodes&filter[subject][id]=beta'));
+    }
+
+    #[Test]
     public function anUnscopedTypeMatchesEitherFormToo(): void
     {
         self::assertSame(['7', '8'], $this->noteIds('filter[subject][type]=mkTokens'));
@@ -92,7 +100,7 @@ abstract class MorphKeysConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['mkBadges:b-1', 'mkBadges:b-2'], $this->keys($document['included'] ?? []));
 
         $document = $this->document('/mkNotes?include=subject');
-        self::assertSame(['mkBadges:b-1', 'mkBadges:b-2', 'mkCounters:1', 'mkTokens:t-1', 'mkTokens:t-2'], $this->keys($document['included'] ?? []));
+        self::assertSame(['mkBadges:b-1', 'mkBadges:b-2', 'mkCodes:alpha', 'mkCounters:1', 'mkTokens:t-1', 'mkTokens:t-2'], $this->keys($document['included'] ?? []));
     }
 
     /**

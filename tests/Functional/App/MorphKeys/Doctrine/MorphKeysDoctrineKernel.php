@@ -91,7 +91,7 @@ final class MorphKeysDoctrineKernel extends Kernel
             ->args([new Reference(QueryCountingLogger::class)])
             ->tag('doctrine.middleware');
 
-        foreach ([DoctrineMkNoteResource::class, DoctrineMkCounterResource::class, DoctrineMkBadgeResource::class, DoctrineMkTokenResource::class, HiddenTargetsExtension::class] as $class) {
+        foreach ([DoctrineMkNoteResource::class, DoctrineMkCounterResource::class, DoctrineMkBadgeResource::class, DoctrineMkTokenResource::class, DoctrineMkCodeResource::class, HiddenTargetsExtension::class] as $class) {
             $services->set($class);
         }
     }

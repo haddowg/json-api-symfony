@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys;
 
 use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkBadgeEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkCodeEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkCounterEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkNoteEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkPinEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkTokenEntity;
 
 /**
- * The rows both kernels serve. Counters 2, and badges 3 and 4, are hidden. Each note's
+ * The rows both kernels serve. Counters 2, badges 3 and 4, and code beta are hidden. Each note's
  * stored id is the target's storage key or its wire id:
  *
  * | note | subject            | pins                  |
@@ -25,6 +26,8 @@ use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkTokenEntity;
  * | 7    | mkTokens 1         | mkTokens t-2          |
  * | 8    | mkTokens t-2       |                       |
  * | 9    |                    |                       |
+ * | 10   | mkCodes alpha      |                       |
+ * | 11   | mkCodes beta       |                       |
  */
 final class MorphKeysFixtures
 {
@@ -43,6 +46,8 @@ final class MorphKeysFixtures
             new MkNoteEntity(7, 'mkTokens', '1'),
             new MkNoteEntity(8, 'mkTokens', 't-2'),
             new MkNoteEntity(9),
+            new MkNoteEntity(10, 'mkCodes', 'alpha'),
+            new MkNoteEntity(11, 'mkCodes', 'beta'),
         ];
 
         return [
@@ -56,6 +61,7 @@ final class MorphKeysFixtures
             ],
             'counters' => [new MkCounterEntity(1, 'one'), new MkCounterEntity(2, 'two', true)],
             'badges' => [new MkBadgeEntity(1, 'gold'), new MkBadgeEntity(2, 'silver'), new MkBadgeEntity(3, 'bronze', true), new MkBadgeEntity(4, 'tin', true)],
+            'codes' => [new MkCodeEntity('alpha', 'Alpha'), new MkCodeEntity('beta', 'Beta', true)],
             'tokens' => [new MkTokenEntity(1, 'red'), new MkTokenEntity(2, 'blue')],
         ];
     }

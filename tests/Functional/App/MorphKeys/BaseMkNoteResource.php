@@ -13,7 +13,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkNoteEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\MorphKeys\Doctrine\MkPinEntity;
 
 /**
- * Notes about a counter, a badge or a token, and pinned to others.
+ * Notes about a counter, a badge, a token or a code, and pinned to others.
  */
 abstract class BaseMkNoteResource extends AbstractResource
 {
@@ -23,10 +23,10 @@ abstract class BaseMkNoteResource extends AbstractResource
     {
         return [
             Id::make()->numeric(),
-            MorphTo::make('subject', ['mkCounters', 'mkBadges', 'mkTokens'])
+            MorphTo::make('subject', ['mkCounters', 'mkBadges', 'mkTokens', 'mkCodes'])
                 ->identifiedByColumns(type: 'subjectType', id: 'subjectId')
                 ->nullable(),
-            MorphToMany::make('pins', ['mkCounters', 'mkBadges', 'mkTokens'])
+            MorphToMany::make('pins', ['mkCounters', 'mkBadges', 'mkTokens', 'mkCodes'])
                 ->through(MkPinEntity::class)
                 ->identifiedByRows(owner: 'note', type: 'pinType', id: 'pinId')
                 ->cannotBeIncluded()

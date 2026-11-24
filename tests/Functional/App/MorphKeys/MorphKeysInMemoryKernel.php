@@ -54,11 +54,11 @@ final class MorphKeysInMemoryKernel extends Kernel
             ->autowire()
             ->autoconfigure();
 
-        foreach ([MkNoteResource::class, MkCounterResource::class, MkBadgeResource::class, MkTokenResource::class] as $class) {
+        foreach ([MkNoteResource::class, MkCounterResource::class, MkBadgeResource::class, MkTokenResource::class, MkCodeResource::class] as $class) {
             $services->set($class);
         }
 
-        foreach (['mkNotes' => ['notes', '', false], 'mkCounters' => ['counters', '', true], 'mkBadges' => ['badges', 'b-', true], 'mkTokens' => ['tokens', 't-', false]] as $type => [$slice, $prefix, $scoped]) {
+        foreach (['mkNotes' => ['notes', '', false], 'mkCounters' => ['counters', '', true], 'mkBadges' => ['badges', 'b-', true], 'mkTokens' => ['tokens', 't-', false], 'mkCodes' => ['codes', '', true]] as $type => [$slice, $prefix, $scoped]) {
             $services->set('test.mk_' . $slice . '_provider', $scoped ? HiddenTargetsProvider::class : InMemoryDataProvider::class)
                 ->factory([MorphKeysProviderFactory::class, $scoped ? 'scoped' : 'provider'])
                 ->args([$type, $slice, $prefix])

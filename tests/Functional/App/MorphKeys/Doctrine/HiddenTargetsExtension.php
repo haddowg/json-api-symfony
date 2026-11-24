@@ -9,13 +9,13 @@ use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineExtensionInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\ExtensionContext;
 
 /**
- * Hides counters and badges marked hidden.
+ * Hides counters, badges and codes marked hidden.
  */
 final class HiddenTargetsExtension implements DoctrineExtensionInterface
 {
     public function supports(string $type): bool
     {
-        return $type === 'mkCounters' || $type === 'mkBadges';
+        return \in_array($type, ['mkCounters', 'mkBadges', 'mkCodes'], true);
     }
 
     public function apply(QueryBuilder $builder, ExtensionContext $context): QueryBuilder

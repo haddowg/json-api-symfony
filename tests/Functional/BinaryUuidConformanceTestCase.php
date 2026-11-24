@@ -12,6 +12,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidBookEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidLabelEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidNoteEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidShelfEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Uid\Uuid;
@@ -331,6 +332,21 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
         $expected = [$this->ids['classic'], $this->ids['new']];
         \sort($expected);
         self::assertSame($expected, $included);
+    }
+
+    /**
+     * The lower-cased SQL each statement of a request ran.
+     *
+     * @return list<string>
+     */
+    protected function statementsOf(string $path): array
+    {
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $logger->reset();
+        $this->get($path);
+
+        return \array_map('\\strtolower', $logger->statements());
     }
 
     /**
