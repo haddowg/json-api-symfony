@@ -127,6 +127,42 @@ type, which on Doctrine is a single-valued association to the parent's entity. W
 checks it, and checks that the related type's provider reads through foreign keys
 (`ReadsByForeignKeyInterface`, which the Doctrine and in-memory providers implement).
 
+Doctrine compares the key in its database form on both sides, through the field's own
+mapped type: the parents' keys are converted before they're bound, and each row's key
+is converted before it's matched back to its parent. A field of any type works, an
+integer, a string, a `guid`, a Symfony `uuid` or `ulid` kept as 16 bytes on a platform
+with no native uuid column, or a custom type holding a value object, and so does a
+parent type behind an id encoder.
+
+A `WhereHas`, `WhereDoesntHave` or `->through()` path over such a relation joins the rows
+whose key names the row being filtered, so it needs SQL to compare the field with the
+parent's id column as stored. Warm-up refuses a filter reaching through one whose field
+and id column differ in type, other than both being integers or both text.
+
+#### A foreign key through a polymorphic relation
+
+When the related rows point back through a `MorphTo` that keeps its target in two
+fields, name the `MorphTo` as the foreign key:
+
+```php
+// NoteResource
+MorphTo::make('owner', ['posts', 'videos'])
+    ->identifiedByColumns(type: 'ownerType', id: 'ownerId'),
+
+// PostResource
+HasMany::make('notes', 'notes', 'owner'),
+HasOne::make('latestNote', 'notes', 'owner'),
+```
+
+Every read and filter of the relation then keeps both fields: the type field to the
+stored values naming `posts`, and the id field to the posts' keys, so a video's notes
+never show up under a post whose id they share. A relationship write sets both fields on
+the rows that join and clears both on the rows that leave, through
+[`WritesPolymorphicForeignKeysInterface`](../src/DataPersister/WritesPolymorphicForeignKeysInterface.php),
+which the Doctrine and in-memory persisters implement. Naming the id field itself,
+`HasMany::make('notes', 'notes', 'ownerId')`, fails warm-up and tells you to name the
+`MorphTo` instead.
+
 A relation with no foreign key on a type no entity maps can't be scoped by Doctrine, so
 it reads what the parent model holds. A to-many's pages, counts and related endpoint are
 cut in memory from the model's value, unless the parent type's provider batches the
@@ -171,7 +207,8 @@ is what the rows hold.
 
 The Doctrine and in-memory persisters write foreign keys through
 [`WritesForeignKeysInterface`](../src/DataPersister/WritesForeignKeysInterface.php); a
-related type whose persister doesn't implement it can't be written this way. A Doctrine
+related type whose persister doesn't implement it can't be written this way. Doctrine
+converts the key to the field's PHP form first, so a `uuid` field gets a `Uuid`. A Doctrine
 parent with no inverse mapping to its members, which used to fail on a relationship
 write, now writes through its foreign key.
 
@@ -1846,6 +1883,15 @@ and a text column that holds the ids of several kinds of target often keeps the 
 The linkage, the related endpoint, the include and `WhereMorph` accept either, and so do a
 `MorphToMany`'s link rows. Link rows the bundle writes hold the storage key.
 
+The id field may also hydrate to a value object, as a `uuid` column gives a `Uuid`. Its
+string form is the stored id, so the linkage renders without a getter that returns a
+string, and `WhereMorph` binds a requested id through the column's own type.
+
+The same two fields let each target type read its rows back with a `HasMany` or `HasOne`
+that names the `MorphTo` as its foreign key, as
+[a foreign key through a polymorphic relation](#a-foreign-key-through-a-polymorphic-relation)
+describes.
+
 A loaded target renders under the pair's type, and the read gate, the related endpoint
 and the include walk all treat it as that type. The declared types' resources don't need
 to override `getType()`, so one entity class can back several of them. The build check
@@ -1964,7 +2010,10 @@ MorphToMany::make('companies', ['agencies', 'advertisers', 'publishers'])
 ```
 
 The fields are properties of the `through()` entity. A stored type is the member's
-JSON:API type unless a `typeMap` maps stored values to types. A row whose type names no
+JSON:API type unless a `typeMap` maps stored values to types. The `owner` field must
+identify exactly one owning type: the rows are read by that field alone, with no owner
+type beside it, so a link table shared by several owner types isn't supported yet. The
+`id` field may be of any mapped type, a `uuid` included, and is compared through it. A row whose type names no
 declared type, or that has no id, isn't a member, and members read by the request's
 `sort`, else the relation's default order, ties broken by stored type then id.
 
