@@ -53,6 +53,7 @@ use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\PositionedRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\Field\Time;
 use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
@@ -94,6 +95,7 @@ use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesPolymorphicForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataPersister\WriteTransaction;
 use haddowg\JsonApiBundle\DataPersister\WriteTransactionContext;
@@ -3064,7 +3066,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A foreign key is written on the related rows by their own persister.
         if ($this->readRouter?->readsByForeignKey($relation) === true) {
             $plan = $this->foreignKeyPlan($server, $type, $entity, $relation, $linkage, $mode, $request);
-            $plan['writer']->writeForeignKey($relation->relatedTypes()[0], $plan['foreignKey'], $entity, $plan['parentKey'], $plan['attach'], $plan['detach']);
+            if ($plan['writer'] instanceof WritesPolymorphicForeignKeysInterface && $plan['foreignKey']->morphColumns() !== null) {
+                $plan['writer']->writePolymorphicForeignKey($relation->relatedTypes()[0], $plan['foreignKey'], $type, $plan['parentKey'], $plan['attach'], $plan['detach']);
+            } else {
+                $plan['writer']->writeForeignKey($relation->relatedTypes()[0], $plan['foreignKey'], $entity, $plan['parentKey'], $plan['attach'], $plan['detach']);
+            }
 
             return $entity;
         }
@@ -3251,6 +3257,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $foreignKey = ForeignKey::of($relation, $server)
             ?? throw new \LogicException(\sprintf('Relation "%s" on resource type "%s" writes through the foreign key "%s", which is no stored field or to-one relation of type "%s".', $relation->name(), $type, (string) ForeignKey::nameOf($relation), $relatedType));
         $writer = $this->persisters->supportsType($relatedType) ? $this->persisters->forType($relatedType) : null;
+        if ($foreignKey->morphColumns() !== null && !$writer instanceof WritesPolymorphicForeignKeysInterface) {
+            throw new \LogicException(\sprintf(
+                'Relation "%s" on resource type "%s" writes through the polymorphic foreign key "%s", but no persister serving type "%s" writes one. Implement %s on it.',
+                $relation->name(),
+                $type,
+                $foreignKey->name,
+                $relatedType,
+                WritesPolymorphicForeignKeysInterface::class,
+            ));
+        }
         if (!$writer instanceof WritesForeignKeysInterface) {
             throw new \LogicException(\sprintf(
                 'Relation "%s" on resource type "%s" writes through the foreign key "%s", but no persister serving type "%s" writes one. Implement %s on it.',
@@ -3365,11 +3381,28 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         $plan = $this->foreignKeyPlan($server, $type, $parent, $relation, $linkage, $mode, $request);
+        $foreignKey = $plan['foreignKey'];
+        $morph = $foreignKey->morphColumns();
         foreach ($plan['attach'] as $row) {
-            $from = Accessor::get($row, $plan['foreignKey']->column);
-            if (!\is_object($from) && $from !== null) {
-                $wireId = $this->idEncoders?->encoderFor($type)?->encode($from) ?? (\is_scalar($from) ? (string) $from : null);
-                $from = $wireId !== null && $this->providers->supportsType($type) ? $this->providers->forType($type)->fetchOne($type, $wireId) : null;
+            $fromType = $type;
+            if ($morph !== null) {
+                // The row's current owner is whatever its MorphTo pair names, of any type.
+                $pair = $morph->pair($row);
+                [$fromType, $from] = $pair ?? [$type, null];
+            } else {
+                $from = Accessor::get($row, $foreignKey->column);
+            }
+            // A field holds the parent's key, which may be a value object such as a Uuid;
+            // only a to-one relation holds the parent itself.
+            if ($from !== null && ($morph !== null || !$foreignKey->isRelation() || !\is_object($from))) {
+                $encoder = $this->idEncoders?->encoderFor($fromType);
+                $wireId = match (true) {
+                    // A stored polymorphic id may be the storage key or the wire id.
+                    $morph !== null && (\is_string($from) || \is_int($from)) => StoredIdForms::wireId($encoder, $from),
+                    $encoder !== null => $encoder->encode($from),
+                    default => \is_scalar($from) || $from instanceof \Stringable ? (string) $from : null,
+                };
+                $from = $wireId !== null && $this->providers->supportsType($fromType) ? $this->providers->forType($fromType)->fetchOne($fromType, $wireId) : null;
             }
 
             $this->dispatch(new BeforeMemberMoveEvent($type, $request, $parent, $relation, $row, \is_object($from) ? $from : null, $this->serverName($request)));

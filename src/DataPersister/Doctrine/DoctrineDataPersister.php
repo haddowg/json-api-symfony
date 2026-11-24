@@ -37,8 +37,8 @@ use haddowg\JsonApiBundle\DataPersister\ReportsMovedMembersInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDateTimesInterface;
 use haddowg\JsonApiBundle\DataPersister\StoresDecimalsInterface;
 use haddowg\JsonApiBundle\DataPersister\TransactionalDataPersisterInterface;
-use haddowg\JsonApiBundle\DataPersister\WritesForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesLinkRowsInterface;
+use haddowg\JsonApiBundle\DataPersister\WritesPolymorphicForeignKeysInterface;
 use haddowg\JsonApiBundle\DataPersister\WritesPositionsInterface;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineIdentifiers;
 use haddowg\JsonApiBundle\DataProvider\Doctrine\NaiveDateTimeStorage;
@@ -86,7 +86,7 @@ use Symfony\Contracts\Service\ResetInterface;
  * (`404`), rather than passing the raw wire string to `getReference` (which would
  * build a proxy that errors on initialization, surfacing as a `500`).
  */
-final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, StoresDecimalsInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface, ResetInterface
+final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivotRowsInterface, TransactionalDataPersisterInterface, ReportsMovedMembersInterface, StoresDateTimesInterface, StoresDecimalsInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesPolymorphicForeignKeysInterface, ResetInterface
 {
     private readonly DoctrineIdentifiers $ids;
 
@@ -428,6 +428,11 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
     public function requiresForeignKey(string $relatedType, ForeignKey $foreignKey): bool
     {
         $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
+        $morph = $foreignKey->morphColumns();
+        if ($morph !== null) {
+            return ($metadata->hasField($morph->type) && !$metadata->isNullable($morph->type))
+                || ($metadata->hasField($morph->id) && !$metadata->isNullable($morph->id));
+        }
         if ($metadata->hasAssociation($foreignKey->column)) {
             return $this->requiresParentOf($metadata, $foreignKey->column);
         }
@@ -441,21 +446,47 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
      */
     public function writeForeignKey(string $relatedType, ForeignKey $foreignKey, object $parent, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
     {
+        if ($foreignKey->morphColumns() !== null) {
+            throw new \LogicException(\sprintf('The foreign key "%s" is a MorphTo, which writes two fields and needs the parent\'s type: call writePolymorphicForeignKey().', $foreignKey->name));
+        }
+
         $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
         $column = $foreignKey->column;
-        $value = $parent;
-        if (!$metadata->hasAssociation($column)) {
-            $typeName = $metadata->getTypeOfField($column);
-            $value = \is_string($typeName) && $parentKey !== null
-                ? Type::getType($typeName)->convertToPHPValue($parentKey, $this->entityManager->getConnection()->getDatabasePlatform())
-                : $parentKey;
-        }
+        // The key arrives as the parent's decoded wire id, in whatever form its encoder gives.
+        $value = $metadata->hasAssociation($column) ? $parent : $this->ids->fieldToPhp($metadata, $column, $parentKey);
 
         foreach ($detach as $row) {
             $metadata->setFieldValue($row, $column, null);
         }
         foreach ($attach as $row) {
             $metadata->setFieldValue($row, $column, $value);
+        }
+
+        if ($flush) {
+            $this->entityManager->flush();
+        }
+    }
+
+    /**
+     * Sets the MorphTo's type and id fields on each joining row, the type to the stored
+     * value naming `$parentType` and the id to its key in the field's PHP type, and clears
+     * both on each leaving one.
+     */
+    public function writePolymorphicForeignKey(string $relatedType, ForeignKey $foreignKey, string $parentType, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
+    {
+        $morph = $foreignKey->morphColumns()
+            ?? throw new \LogicException(\sprintf('The foreign key "%s" is no MorphTo declared with identifiedByColumns().', $foreignKey->name));
+        $metadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
+        $stored = $morph->storedValueFor($parentType);
+        $key = $this->ids->fieldToPhp($metadata, $morph->id, $parentKey);
+
+        foreach ($detach as $row) {
+            $metadata->setFieldValue($row, $morph->type, null);
+            $metadata->setFieldValue($row, $morph->id, null);
+        }
+        foreach ($attach as $row) {
+            $metadata->setFieldValue($row, $morph->type, $stored);
+            $metadata->setFieldValue($row, $morph->id, $key);
         }
 
         if ($flush) {

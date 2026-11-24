@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+
 /**
  * The page of parents a relation read through a foreign key answers, each keyed by its
  * wire id: the parent object and the key its related rows' foreign key holds, which is
@@ -18,11 +20,13 @@ final readonly class ForeignKeyParents
      * @param string                    $type    the parents' resource type
      * @param array<int|string, object> $parents each parent, keyed by its wire id (an integer key for a numeric one)
      * @param array<int|string, mixed>  $keys    each parent's stored key, keyed by its wire id
+     * @param IdEncoderInterface|null   $encoder the parents' type's id encoder, which turns a stored key in another form into the wire id
      */
     public function __construct(
         public string $type,
         public array $parents,
         public array $keys,
+        public ?IdEncoderInterface $encoder = null,
     ) {}
 
     /**
@@ -42,12 +46,15 @@ final readonly class ForeignKeyParents
             $this->type,
             \array_intersect_key($this->parents, [$wireId => true]),
             \array_intersect_key($this->keys, [$wireId => true]),
+            $this->encoder,
         );
     }
 
     /**
      * The wire id of the parent whose key is `$key`, compared as strings, or `null` when
-     * no parent has it.
+     * no parent has it. A key in another form than the parents' decoded keys, such as the
+     * `Uuid` a model holds where the encoder decodes to bytes, matches the parent whose
+     * wire id the encoder gives it.
      */
     public function wireIdOf(mixed $key): ?string
     {
@@ -62,6 +69,16 @@ final readonly class ForeignKeyParents
             }
         }
 
-        return null;
+        if ($this->encoder === null) {
+            return null;
+        }
+
+        try {
+            $wire = $this->encoder->encode($key);
+        } catch (\InvalidArgumentException|\UnexpectedValueException|\Error) {
+            return null;
+        }
+
+        return \array_key_exists($wire, $this->keys) ? $wire : null;
     }
 }

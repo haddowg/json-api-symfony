@@ -3027,9 +3027,37 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         $metadata = $this->entityManager->getClassMetadata($parent::class);
         $key = $this->ids->valueOf($metadata, $parent);
-        $parents = new ForeignKeyParents($parent::class, ['0' => $parent], ['0' => $key]);
+        $parents = new ForeignKeyParents($this->foreignKeyParentType($parent, $relation, $foreignKey), ['0' => $parent], ['0' => $key]);
 
         return $this->fetchByForeignKey($relatedType, $relation, $foreignKey, $parents, $criteria, $request)->for('0');
+    }
+
+    /**
+     * The resource type of a lone `$parent` a relation reads through `$foreignKey` for:
+     * for a polymorphic foreign key, the declared type whose resource declares `$relation`,
+     * else the one whose entity `$parent` is, since its type field names the parent by
+     * type. Any other foreign key needs no type, and gets the parent's class.
+     */
+    private function foreignKeyParentType(object $parent, RelationInterface $relation, ForeignKey $foreignKey): string
+    {
+        $morph = $foreignKey->morphColumns();
+        if ($morph === null) {
+            return $parent::class;
+        }
+
+        foreach ($morph->types as $type) {
+            if ($this->idEncoders->resourceFor($type)?->relationNamed($relation->name()) === $relation) {
+                return $type;
+            }
+        }
+        foreach ($morph->types as $type) {
+            $class = $this->entityClassByType[$type] ?? null;
+            if ($class !== null && $parent instanceof $class) {
+                return $type;
+            }
+        }
+
+        return $parent::class;
     }
 
     /**
@@ -3070,7 +3098,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $keys[$wireId] = ForeignKey::parentKey($resource, $parent);
         }
 
-        return new ForeignKeyParents($parentType, $objects, $keys);
+        return new ForeignKeyParents($parentType, $objects, $keys, $this->idEncoders->encoderFor($parentType));
     }
 
     /**

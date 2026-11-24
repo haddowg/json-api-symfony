@@ -395,7 +395,21 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
         }
 
         $grouped = \array_fill_keys(\array_map('strval', \array_keys($parents->keys)), []);
+        $morph = $foreignKey->morphColumns();
         foreach ($this->store->all() as $row) {
+            if ($morph !== null) {
+                // The pair must name the parents' type, and its id may be in either stored form.
+                $pair = $morph->pair($row);
+                $wireId = $pair === null || $pair[0] !== $parents->type
+                    ? null
+                    : ($parents->wireIdOf($pair[1]) ?? (\array_key_exists($pair[1], $parents->keys) ? (string) $pair[1] : null));
+                if ($wireId !== null) {
+                    $grouped[$wireId][] = $row;
+                }
+
+                continue;
+            }
+
             $value = Accessor::get($row, $foreignKey->column);
             $wireId = \is_object($value) && isset($byObject[\spl_object_id($value)])
                 ? $byObject[\spl_object_id($value)]

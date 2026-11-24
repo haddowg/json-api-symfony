@@ -331,6 +331,25 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         }
 
         $metadata = $this->entityManager->getClassMetadata($relatedClass);
+        $morph = $foreignKey->morphColumns();
+        if ($morph !== null) {
+            // A polymorphic foreign key compares the two fields its MorphTo keeps the target in.
+            foreach ([$morph->type, $morph->id] as $field) {
+                if (!$metadata->hasField($field)) {
+                    throw new \LogicException(\sprintf(
+                        'Relation "%s" on resource type "%s" reads through the foreign key "%s", a MorphTo keeping its target in "%s", which %s doesn\'t map as a field.',
+                        $relation->name(),
+                        $type,
+                        $name,
+                        $field,
+                        $relatedClass,
+                    ));
+                }
+            }
+
+            return;
+        }
+
         $column = $foreignKey->column;
         $problem = null;
         if ($metadata->hasAssociation($column)) {
@@ -502,7 +521,13 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                     throw $refuse(\sprintf('the relation "%s" reaches the type "%s", which no Doctrine entity maps.', $hop->relation->name(), $relatedType));
                 }
                 $isPivot = $hop->relation instanceof \haddowg\JsonApi\Resource\Field\BelongsToMany && $hop->relation->storedPivotFields() !== [];
-                if (!$current->hasAssociation($hop->storage()) && !$isPivot) {
+                $foreignKey = $paths->foreignKeyOf($hop->relation);
+                if ($foreignKey !== null) {
+                    // A hop over a foreign key compares the key with the owner's id in SQL.
+                    if (!ForeignKeyScope::comparableInSql($this->entityManager->getClassMetadata($this->entityClassByType[$relatedType]), $foreignKey, $hop->parentType, $current)) {
+                        throw $refuse(\sprintf('the relation "%s" reads through the foreign key "%s", whose stored type SQL can\'t compare with the id of %s.', $hop->relation->name(), $foreignKey->name, $current->getName()));
+                    }
+                } elseif (!$current->hasAssociation($hop->storage()) && !$isPivot) {
                     throw $refuse(\sprintf('"%s" is not an association of %s.', $hop->storage(), $current->getName()));
                 }
                 if ($this->scopesOutsideDoctrine($relatedType, $hop->relation)) {

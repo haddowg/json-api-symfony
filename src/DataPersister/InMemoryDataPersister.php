@@ -42,7 +42,7 @@ use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
  *
  * @template-covariant TModel of object = object
  */
-final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesForeignKeysInterface
+final class InMemoryDataPersister implements DataPersisterInterface, TransactionalDataPersisterInterface, WritesLinkRowsInterface, WritesPositionsInterface, WritesPolymorphicForeignKeysInterface
 {
     /**
      * @param InMemoryStore<TModel>                    $store           the store shared with the read provider
@@ -133,14 +133,62 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
 
     public function writeForeignKey(string $relatedType, ForeignKey $foreignKey, object $parent, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
     {
+        if ($foreignKey->morphColumns() !== null) {
+            throw new \LogicException(\sprintf('The foreign key "%s" is a MorphTo, which writes two fields and needs the parent\'s type: call writePolymorphicForeignKey().', $foreignKey->name));
+        }
+
         foreach ($detach as $row) {
             Accessor::set($row, $foreignKey->column, null);
             $this->store->save($row);
         }
         foreach ($attach as $row) {
-            Accessor::set($row, $foreignKey->column, $foreignKey->isRelation() ? $parent : $parentKey);
+            Accessor::set($row, $foreignKey->column, $foreignKey->isRelation() ? $parent : self::storable($row, $foreignKey->column, $parentKey));
             $this->store->save($row);
         }
+    }
+
+    public function writePolymorphicForeignKey(string $relatedType, ForeignKey $foreignKey, string $parentType, mixed $parentKey, array $attach, array $detach, bool $flush = true): void
+    {
+        $morph = $foreignKey->morphColumns()
+            ?? throw new \LogicException(\sprintf('The foreign key "%s" is no MorphTo declared with identifiedByColumns().', $foreignKey->name));
+        $stored = $morph->storedValueFor($parentType);
+        foreach ($detach as $row) {
+            Accessor::set($row, $morph->type, null);
+            Accessor::set($row, $morph->id, null);
+            $this->store->save($row);
+        }
+        foreach ($attach as $row) {
+            Accessor::set($row, $morph->type, $stored);
+            Accessor::set($row, $morph->id, self::storable($row, $morph->id, $parentKey));
+            $this->store->save($row);
+        }
+    }
+
+    /**
+     * `$key`, a parent's decoded wire id, in the form `$row`'s typed `$property` holds: an
+     * integer from a digit string, a string from an integer, and a value object such as a
+     * `Uuid` through its class's `fromString()`, as a database read would hydrate it. A
+     * property with no single named type, or a key already of its type, takes the key as is.
+     */
+    private static function storable(object $row, string $property, mixed $key): mixed
+    {
+        if ($key === null || !\property_exists($row, $property)) {
+            return $key;
+        }
+
+        $type = (new \ReflectionProperty($row, $property))->getType();
+        if (!$type instanceof \ReflectionNamedType) {
+            return $key;
+        }
+
+        $name = $type->getName();
+
+        return match (true) {
+            $name === 'int' && \is_string($key) && \preg_match('/^-?\d+$/', $key) === 1 => (int) $key,
+            $name === 'string' && \is_int($key) => (string) $key,
+            !$type->isBuiltin() && !$key instanceof $name && (\is_string($key) || $key instanceof \Stringable) && \method_exists($name, 'fromString') => $name::fromString((string) $key),
+            default => $key,
+        };
     }
 
     public function mutateRelationship(

@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
+use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Filter\FilterInterface;
 use haddowg\JsonApi\Resource\Filter\RelationHop;
@@ -55,6 +56,7 @@ final readonly class FilterPaths
         private array $refused = [],
         private ?RelationHop $under = null,
         private ?\Closure $morphAdmission = null,
+        private ?SerializerResolverInterface $resources = null,
     ) {}
 
     /**
@@ -85,7 +87,7 @@ final readonly class FilterPaths
             $serializer = $resources->serializerFor($type);
 
             return $serializer instanceof AbstractResource ? $serializer->allFields() : null;
-        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources, $pivotRows), $admission, under: $under, morphAdmission: $morphAdmission);
+        }, $resource::$type, self::namedBy($resource, $parentType), ThroughReadAccess::forResolver($resources, $pivotRows), $admission, under: $under, morphAdmission: $morphAdmission, resources: $resources);
     }
 
     /**
@@ -115,7 +117,7 @@ final readonly class FilterPaths
      */
     public function scoped(?JsonApiRequestInterface $request, array $refused = []): self
     {
-        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->under, $this->morphAdmission);
+        return new self($this->resolver, $this->fields, $this->fieldsOf, $this->type, $this->named, $this->access, $this->admission, $request, $refused, $this->under, $this->morphAdmission, $this->resources);
     }
 
     /**
@@ -271,6 +273,29 @@ final readonly class FilterPaths
     public function named(): array
     {
         return $this->named;
+    }
+
+    /**
+     * The foreign key `$relation` reads through, resolved against its related type, or
+     * `null` when it declares none or the paths were built without the registered types.
+     */
+    public function foreignKeyOf(RelationInterface $relation): ?ForeignKey
+    {
+        return $this->resources === null ? null : ForeignKey::of($relation, $this->resources);
+    }
+
+    /**
+     * Whether the resource registered for `$type` declares `$relation` itself.
+     */
+    public function declares(string $type, RelationInterface $relation): bool
+    {
+        if ($this->resources === null || !$this->resources->hasSerializerFor($type)) {
+            return false;
+        }
+
+        $serializer = $this->resources->serializerFor($type);
+
+        return $serializer instanceof AbstractResource && $serializer->relationNamedIncludingHidden($relation->name()) === $relation;
     }
 
     /**

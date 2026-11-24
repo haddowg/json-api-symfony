@@ -17,6 +17,7 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Id;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -629,7 +630,7 @@ final class RelatedReadRouter implements ResetInterface
             $keys[$wireId] = ForeignKey::parentKey($serializer, $parent);
         }
 
-        return new ForeignKeyParents($type, $objects, $keys);
+        return new ForeignKeyParents($type, $objects, $keys, self::encoderOf($serializer));
     }
 
     /**
@@ -913,6 +914,22 @@ final class RelatedReadRouter implements ResetInterface
         }
 
         return $byId;
+    }
+
+    /**
+     * The id encoder `$serializer` declares on its id field, if any.
+     */
+    private static function encoderOf(SerializerInterface $serializer): ?IdEncoderInterface
+    {
+        if ($serializer instanceof AbstractResource) {
+            foreach ($serializer->allFields() as $field) {
+                if ($field instanceof Id) {
+                    return $field->encoder();
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
