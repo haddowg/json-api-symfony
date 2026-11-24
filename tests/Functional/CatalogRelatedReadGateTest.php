@@ -84,6 +84,24 @@ final class CatalogRelatedReadGateTest extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aFirewalledParentReadJoinsAsAnAuthenticatedCaller(): void
+    {
+        $spokes = $this->operation('firewalledHubs', 'fetchRelated.spokes');
+        self::assertSame("(is_authenticated()) and (is_granted('ROLE_ADMIN'))", $spokes->security);
+        self::assertSame(SecurityLevel::Type, $spokes->securityLevel);
+        self::assertTrue($this->operation('firewalledHubs', 'fetchRelationship.rims')->security);
+
+        $evaluator = $this->evaluator();
+        self::assertSame(SecurityVerdict::Allowed, $evaluator->evaluate($this->operation('firewalledHubs', 'fetchRelationship.rims'), new InMemoryUser('ada', null, ['ROLE_USER'])));
+        self::assertSame(SecurityVerdict::Allowed, $evaluator->evaluate($spokes, new InMemoryUser('admin', null, ['ROLE_ADMIN', 'ROLE_USER'])));
+        self::assertSame(SecurityVerdict::Denied, $evaluator->evaluate($spokes, new InMemoryUser('ada', null, ['ROLE_USER'])));
+        self::assertSame(SecurityVerdict::Denied, $evaluator->evaluate($spokes));
+
+        self::assertSame(200, $this->handle('/firewalledHubs/1/spokes', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer admin'])->getStatusCode());
+        self::assertSame(403, $this->handle('/firewalledHubs/1/spokes', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer ada'])->getStatusCode());
+    }
+
+    #[Test]
     public function anIncludedToManyAUserMayNotListIsStillWithheldWhole(): void
     {
         $response = $this->handle('/hubs/1?include=spokes,rims,leadSpoke', 'GET', null, ['HTTP_AUTHORIZATION' => 'Bearer ada']);
