@@ -6,7 +6,9 @@ namespace haddowg\JsonApiBundle\DataProvider\Doctrine;
 
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Types\ConversionException;
+use Doctrine\DBAL\Types\GuidType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -54,11 +56,31 @@ final class DoctrineIdentifiers
             return \is_scalar($value) ? $value : null;
         }
 
+        $platform = $this->entityManager->getConnection()->getDatabasePlatform();
         try {
-            return $type->convertToDatabaseValue($value, $this->entityManager->getConnection()->getDatabasePlatform());
+            $database = $type->convertToDatabaseValue($value, $platform);
+
+            return self::fitsNativeGuid($type, $platform, $database) ? $database : null;
         } catch (ConversionException|\InvalidArgumentException|\TypeError|\ValueError) {
             return null;
         }
+    }
+
+    /**
+     * Whether a database value of the type `$type` is one the platform can bind: anything,
+     * except a `guid` the platform keeps in a native uuid column, such as PostgreSQL, which
+     * refuses a value that isn't a UUID with an error rather than finding no row.
+     */
+    public static function fitsNativeGuid(Type $type, AbstractPlatform $platform, mixed $database): bool
+    {
+        if (!$type instanceof GuidType || !\is_string($database)) {
+            return true;
+        }
+        if ($platform->getGuidTypeDeclarationSQL([]) === $platform->getStringTypeDeclarationSQL(['fixed' => true, 'length' => 36])) {
+            return true;
+        }
+
+        return \preg_match('/^\{?[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}\}?$/i', $database) === 1;
     }
 
     /**
