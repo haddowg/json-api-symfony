@@ -165,12 +165,29 @@ final class ReadableRows
     public function refusedCollectionType(RelationInterface $relation, ?string $serverName = null, ?array $types = null): ?string
     {
         $serverName ??= $this->serverName;
-        foreach ($types ?? $relation->relatedTypes() as $type) {
-            $expression = $this->registry->securityFor($type, $serverName)?->forList();
-            if (!\is_string($expression)) {
-                continue;
-            }
 
+        return $this->firstRefused($this->registry->collectionGates($types ?? $relation->relatedTypes(), $serverName), $serverName);
+    }
+
+    /**
+     * The first type whose collection read gate refuses the caller a related or
+     * relationship read through `$relation`, or `null` when none does. Which gates apply
+     * is {@see ResourceSecurityRegistry::relatedCollectionGates()}'s decision, which the
+     * operation catalogue shares.
+     */
+    public function refusedRelatedRead(RelationInterface $relation, ?string $serverName = null): ?string
+    {
+        $serverName ??= $this->serverName;
+
+        return $this->firstRefused($this->registry->relatedCollectionGates($relation, $serverName), $serverName);
+    }
+
+    /**
+     * @param array<string, string> $gates collection read expressions keyed by type
+     */
+    private function firstRefused(array $gates, string $serverName): ?string
+    {
+        foreach ($gates as $type => $expression) {
             $key = $serverName . '|' . $type;
             $this->collections[$key] ??= $this->isGranted($expression, null);
             if (!$this->collections[$key]) {

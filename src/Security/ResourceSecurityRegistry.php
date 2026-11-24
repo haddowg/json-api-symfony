@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Security;
 
+use haddowg\JsonApi\OpenApi\Metadata\RelationMetadataInterface;
+use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApiBundle\Server\ServerProvider;
 
 /**
@@ -59,5 +61,44 @@ final class ResourceSecurityRegistry
     public function securityFor(string $type, string $server = ServerProvider::DEFAULT_SERVER): ?ResourceSecurity
     {
         return $this->byServer[$server][$type] ?? null;
+    }
+
+    /**
+     * The collection read expressions of `$types` on `$server`, the check `GET /{type}`
+     * makes, keyed by type. A type without one is left out.
+     *
+     * @param list<string> $types
+     *
+     * @return array<string, string>
+     */
+    public function collectionGates(array $types, string $server = ServerProvider::DEFAULT_SERVER): array
+    {
+        $gates = [];
+        foreach ($types as $type) {
+            $expression = $this->securityFor($type, $server)?->forList();
+            if (\is_string($expression)) {
+                $gates[$type] = $expression;
+            }
+        }
+
+        return $gates;
+    }
+
+    /**
+     * The collection read expressions a related or relationship read through `$relation`
+     * must pass besides its own read gate, keyed by related type: every related type's,
+     * for a to-many, since its endpoints show a list whole or not at all. A to-one has
+     * none, and neither has a relation declaring its own read permission, which replaces
+     * them.
+     *
+     * @return array<string, string>
+     */
+    public function relatedCollectionGates(RelationInterface|RelationMetadataInterface $relation, string $server = ServerProvider::DEFAULT_SERVER): array
+    {
+        if (!$relation->isToMany() || $relation->securityRead() !== null) {
+            return [];
+        }
+
+        return $this->collectionGates($relation->relatedTypes(), $server);
     }
 }

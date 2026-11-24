@@ -20,15 +20,18 @@ use haddowg\JsonApiBundle\Security\ResourceSecurityRegistry;
  *
  * - a CRUD operation: the type's `security*` declaration for it;
  * - a related or relationship read: the relation's read security, else the type's
- *   single-read security; a relationship write: the relation's mutate security, else the
- *   type's update security;
+ *   single-read security and, for a to-many, the collection read security of each type
+ *   it relates to, joined with `and` as the endpoint enforces them all; a relationship
+ *   write: the relation's mutate security, else the type's update security;
  * - an action: its own `security`;
  * - the Atomic Operations endpoint: none, since each entry is checked as its operation.
  *
  * A rule is {@see SecurityLevel::Entity} when it is an expression evaluated against the
  * resource that reads `object` or `subject`, {@see SecurityLevel::Type} when any other
  * expression or `true` guards it, and {@see SecurityLevel::None} for `false` or nothing.
- * The collection read is evaluated with no resource, so it is never `Entity`.
+ * The collection read is evaluated with no resource, so it is never `Entity`, and
+ * neither is a related type's collection read joined onto a related read: only the
+ * parent's or the relation's own read can make that `Entity`.
  */
 final class OperationSecuritySource implements OperationSecuritySourceInterface
 {
@@ -57,7 +60,50 @@ final class OperationSecuritySource implements OperationSecuritySourceInterface
             OperationKind::Atomic => [null, false],
         };
 
-        return new OperationSecurity($expression, self::level($expression, $hasResource));
+        $level = self::level($expression, $hasResource);
+        if ($key->kind === OperationKind::FetchRelated || $key->kind === OperationKind::FetchRelationship) {
+            return self::withCollectionGates($expression, $level, $this->relatedCollectionGates($server, $type, $key));
+        }
+
+        return new OperationSecurity($expression, $level);
+    }
+
+    /**
+     * Joins the related types' collection read gates onto a related read's own rule. A
+     * `true` rule, which needs an authenticated caller, joins as `is_authenticated()`, and
+     * `false` or no rule adds nothing.
+     *
+     * @param list<string> $gates
+     */
+    private static function withCollectionGates(string|bool|null $expression, SecurityLevel $level, array $gates): OperationSecurity
+    {
+        if ($gates === []) {
+            return new OperationSecurity($expression, $level);
+        }
+
+        $parts = match (true) {
+            \is_string($expression) => [$expression],
+            $expression === true => ['is_authenticated()'],
+            default => [],
+        };
+        $parts = \array_values(\array_unique([...$parts, ...$gates]));
+        $joined = \count($parts) === 1 ? $parts[0] : \implode(' and ', \array_map(static fn(string $part): string => '(' . $part . ')', $parts));
+
+        return new OperationSecurity($joined, $level === SecurityLevel::Entity ? SecurityLevel::Entity : SecurityLevel::Type);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function relatedCollectionGates(string $server, TypeMetadataInterface $type, OperationKey $key): array
+    {
+        foreach ($type->relations() as $relation) {
+            if ($relation->name() === $key->relation) {
+                return \array_values($this->security?->relatedCollectionGates($relation, $server) ?? []);
+            }
+        }
+
+        return [];
     }
 
     private static function level(string|bool|null $expression, bool $hasResource): SecurityLevel

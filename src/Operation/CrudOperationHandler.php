@@ -2393,11 +2393,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     {
         // A read permission the relation declares replaces the related type's collection
         // gate, and the relation's own read gate has already enforced it.
-        if (!$relation->isToMany() || $relation->securityRead() !== null) {
-            return;
-        }
-
-        $refused = $this->relationshipLinkage?->refusedCollectionType($relation);
+        $refused = $this->relationshipLinkage?->refusedRelatedRead($relation);
         if ($refused !== null) {
             throw new \Symfony\Component\Security\Core\Exception\AccessDeniedException(\sprintf(
                 'Access denied to the collection of the JSON:API type "%s".',
