@@ -206,6 +206,12 @@ final class ResourceValidator
 
         $errors = $this->attributeErrors($resource->allFields(), $incoming, $attributes, $wireAttributes, $creating, $request);
 
+        // Like a required attribute, a required relation must be sent on a create and may
+        // never be sent empty.
+        foreach ($this->relationshipPresenceErrors($resource, $data, $creating, $request) as $error) {
+            $errors[] = $error;
+        }
+
         // Before any per-field format checking, reject a relationship linkage whose
         // resource `type` is not among the relation's declared related types — a
         // resource-type conflict, the linkage twin of core's create-path
@@ -632,6 +638,14 @@ final class ResourceValidator
             }
         }
 
+        // Only a replace sets the whole relationship, so only a replace can empty it.
+        if ($mode === Mode::Replace) {
+            $value = $linkage instanceof ToOneRelationship ? $linkage->resourceIdentifier : $linkage->resourceIdentifiers;
+            foreach ($this->validator->validate($value, $this->presentRelationConstraints($relation, false, null, $value)) as $violation) {
+                $errors[] = $this->errorAt((string) $violation->getMessage(), '/data');
+            }
+        }
+
         if ($errors === []) {
             return;
         }
@@ -1047,6 +1061,88 @@ final class ResourceValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * The presence violations of the relations a write must send: one a create leaves
+     * out points at `/data/relationships/<rel>`, and a `null` to-one or empty to-many
+     * linkage sent for a required relation points at its `data`. A partial update may
+     * leave any relation out. A relation read-only for this caller is not checked.
+     *
+     * @param array<string, mixed> $data the write body's `data` member
+     *
+     * @return list<Error>
+     */
+    private function relationshipPresenceErrors(AbstractResource $resource, array $data, bool $creating, JsonApiRequestInterface $request): array
+    {
+        $relationships = $data['relationships'] ?? null;
+        $relationships = \is_array($relationships) ? $relationships : [];
+
+        $constraints = [];
+        $linkages = [];
+        foreach ($resource->allFields() as $field) {
+            if (!$field instanceof RelationInterface || $field->isReadOnlyFor($creating, $request)) {
+                continue;
+            }
+
+            $name = $field->name();
+            $relationship = $relationships[$name] ?? null;
+            $sent = \is_array($relationship) && \array_key_exists('data', $relationship);
+            $linkage = $sent ? $relationship['data'] : null;
+            if (!$this->hasRequired($field, $creating, $request, $linkage)) {
+                continue;
+            }
+
+            $present = $this->presentRelationConstraints($field, $creating, $request, $linkage);
+            $constraints[$name] = $creating ? new RequiredField($present) : new Optional($present);
+            if ($sent) {
+                $linkages[$name] = $linkage;
+            }
+        }
+
+        if ($constraints === []) {
+            return [];
+        }
+
+        $errors = [];
+        foreach ($this->validator->validate($linkages, new Collection(fields: $constraints, allowExtraFields: true)) as $violation) {
+            \preg_match('/^\[(.*)\]$/', (string) $violation->getPropertyPath(), $match);
+            $pointer = '/data/relationships/' . \str_replace(['~', '/'], ['~0', '~1'], $match[1] ?? '');
+            $errors[] = $this->errorAt(
+                (string) $violation->getMessage(),
+                $violation->getCode() === Collection::MISSING_FIELD_ERROR ? $pointer : $pointer . '/data',
+            );
+        }
+
+        return $errors;
+    }
+
+    /**
+     * The rules a sent linkage of a required relation must pass: a to-one may not be
+     * `null` and a to-many may not be empty, unless the relation is also nullable. A
+     * to-many whose own minItems() already refuses an empty set reports it once, with
+     * that bound's message.
+     *
+     * @return list<\Symfony\Component\Validator\Constraint>
+     */
+    private function presentRelationConstraints(RelationInterface $relation, bool $creating, ?JsonApiRequestInterface $request, mixed $linkage): array
+    {
+        if (!$this->hasRequired($relation, $creating, $request, $linkage)) {
+            return [];
+        }
+        $nullable = $this->hasNullable($relation, $creating, $request, $linkage);
+
+        if ($relation->isToMany()) {
+            foreach ($relation->constraints() as $constraint) {
+                if ($constraint instanceof MinItems && $constraint->value >= 1 && $constraint->context()->appliesTo($creating)) {
+                    return [];
+                }
+            }
+
+            return [new NotBlank(allowNull: $nullable)];
+        }
+
+        return $nullable ? [] : [new NotNull()];
     }
 
     /**
