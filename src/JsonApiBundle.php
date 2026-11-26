@@ -1381,6 +1381,9 @@ final class JsonApiBundle extends AbstractBundle
                 '$servers' => $serverNames,
                 '$combined' => $openApiConfig->combined,
                 '$debug' => '%kernel.debug%',
+                // In debug the scan is cached against the route files, as the router's matcher is.
+                '$configCacheFactory' => service('config_cache_factory')->nullOnInvalid(),
+                '$cacheDir' => '%kernel.cache_dir%/json_api_openapi',
             ]);
 
         $services->set(\haddowg\JsonApiBundle\OpenApi\DocumentRouteWarmer::class)

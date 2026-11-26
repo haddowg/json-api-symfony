@@ -275,8 +275,11 @@ whether the bundle registers its own routes, so expose it as you route it.
 
 The third step reads the whole route collection, so it doesn't run per request. The
 warmer scans the routes at `cache:warmup` and writes the result beside the documents.
-Without one, the first request that needs it scans once and writes it; in debug the scan
-is kept only for the process, so a route you add is picked up without clearing the cache.
+Without one, the first request that needs it scans once and writes it. In debug the scan
+goes into its own file under `%kernel.cache_dir%/json_api_openapi`, checked against the same route
+files and container the router's matcher cache is checked against. A request with nothing
+changed reads that file and never loads the routes, and a route you add or move is picked
+up on the next request without clearing the cache.
 
 When `describedby` is on, no `document_url` is set, the expose gate is open, and no route
 serves a server's document, the warmup logs a warning naming the server and suggesting
