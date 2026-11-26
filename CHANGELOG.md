@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.24.1](https://github.com/haddowg/json-api-symfony/compare/v2.24.0...v2.24.1) (2026-11-26)
+
+
+### Performance Improvements
+
+* cache the describedby route scan in debug against the route files ([#452](https://github.com/haddowg/json-api-symfony/issues/452)) ([047fd11](https://github.com/haddowg/json-api-symfony/commit/047fd11126f25fe5629fefe18f708967ddca80d9))
+
 ## [2.24.0](https://github.com/haddowg/json-api-symfony/compare/v2.23.1...v2.24.0) (2026-11-24)
 
 
