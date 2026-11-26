@@ -7,8 +7,11 @@ namespace haddowg\JsonApiBundle\OpenApi;
 use haddowg\JsonApiBundle\Controller\OpenApiController;
 use haddowg\JsonApiBundle\Routing\JsonApiRoute;
 use haddowg\JsonApiBundle\Server\ServerProvider;
+use Symfony\Component\Config\ConfigCacheFactoryInterface;
+use Symfony\Component\Config\ConfigCacheInterface;
 use Symfony\Component\Routing\Exception\ExceptionInterface as RoutingException;
 use Symfony\Component\Routing\Route;
+use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
@@ -30,8 +33,12 @@ use Symfony\Component\Routing\RouterInterface;
  *
  * The scan reads the whole route collection, so it runs once: the {@see DocumentRouteWarmer}
  * writes its result beside the warmed documents, and a process without one scans once and
- * keeps the result. In debug the result is never read from or written to disk, so a route
- * added between requests is found without clearing the cache.
+ * keeps the result. In debug the stored result isn't used. Instead the scan goes into a
+ * config cache file whose metadata is the route collection's resources, the same check the
+ * router makes for its matcher, so a request loads the collection and scans again only
+ * after a route file or the container changes. Each file name carries a hash of the
+ * declared servers and the combined flag. Without a config cache factory, or when the file
+ * can't be written, debug scans once per process.
  *
  * @phpstan-type DocumentRoute array{route: string, parameters: array<string, string>}
  */
@@ -50,6 +57,8 @@ final class DocumentRouteLocator
         private readonly array $servers,
         private readonly bool $combined = false,
         private readonly bool $debug = false,
+        private readonly ?ConfigCacheFactoryInterface $configCacheFactory = null,
+        private readonly ?string $cacheDir = null,
     ) {}
 
     /**
@@ -79,9 +88,9 @@ final class DocumentRouteLocator
      *
      * @return array<string, DocumentRoute|null>
      */
-    private function scan(DocumentFormat $format): array
+    private function scan(DocumentFormat $format, ?RouteCollection $routes = null): array
     {
-        $collection = $this->router->getRouteCollection()->all();
+        $collection = ($routes ?? $this->router->getRouteCollection())->all();
         $mounted = self::mountedServers($collection);
         $servers = \array_values(\array_filter($this->servers, static fn(string $server): bool => isset($mounted[$server])));
 
@@ -128,19 +137,54 @@ final class DocumentRouteLocator
             return $this->routes[$format->value];
         }
 
-        $routes = $this->debug ? null : $this->store->readDocumentRoutes($format);
+        if ($this->debug) {
+            return $this->routes[$format->value] = $this->debugScan($format);
+        }
+
+        $routes = $this->store->readDocumentRoutes($format);
         if ($routes === null) {
             $routes = $this->scan($format);
-            if (!$this->debug) {
-                try {
-                    $this->store->writeDocumentRoutes($routes, $format);
-                } catch (\Throwable) {
-                    // A read-only cache dir only costs this process the scan it just did.
-                }
+            try {
+                $this->store->writeDocumentRoutes($routes, $format);
+            } catch (\Throwable) {
+                // A read-only cache dir only costs this process the scan it just did.
             }
         }
 
         return $this->routes[$format->value] = $routes;
+    }
+
+    /**
+     * The scan in debug, read from a config cache file while the route collection's
+     * resources are fresh, so a fresh request never loads the collection.
+     *
+     * @return array<string, DocumentRoute|null>
+     */
+    private function debugScan(DocumentFormat $format): array
+    {
+        if ($this->configCacheFactory === null || $this->cacheDir === null) {
+            return $this->scan($format);
+        }
+
+        $file = \sprintf('%s/document_routes.%s.%s.php', $this->cacheDir, $format->value, \hash('xxh128', \serialize([$this->servers, $this->combined])));
+        $cache = $this->configCacheFactory->cache($file, function (ConfigCacheInterface $cache) use ($format): void {
+            $collection = $this->router->getRouteCollection();
+            $routes = $this->routes[$format->value] = $this->scan($format, $collection);
+            try {
+                $cache->write('<?php return ' . \var_export($routes, true) . ';' . \PHP_EOL, $collection->getResources());
+            } catch (\Throwable) {
+                // An unwritable cache dir only costs the scan, as without a cache.
+            }
+        });
+
+        if (isset($this->routes[$format->value])) {
+            return $this->routes[$format->value];
+        }
+
+        /** @var array<string, DocumentRoute|null>|null $cached */
+        $cached = \is_file($cache->getPath()) ? require $cache->getPath() : null;
+
+        return \is_array($cached) ? $cached : $this->scan($format);
     }
 
     /**
