@@ -1183,42 +1183,47 @@ BelongsToMany::make('tracks', 'tracks')
 
 An association entity can link a type to itself, such as a seat placing one owner beside
 another. Its two `ManyToOne`s both target the owner, so the target class can't say which
-one points back at the parent. Map a `OneToMany` on the owner for each side, mapped by
-that side, and store each relation as the collection of its own side:
+one points back at the parent. Name the sides in `through()`:
 
 ```php
 #[ORM\Entity]
 class Seat
 {
-    #[ORM\ManyToOne(targetEntity: Owner::class, inversedBy: 'seats')]
+    #[ORM\ManyToOne(targetEntity: Owner::class)]
     public ?Owner $owner = null;
 
-    #[ORM\ManyToOne(targetEntity: Owner::class, inversedBy: 'peerSeats')]
+    #[ORM\ManyToOne(targetEntity: Owner::class)]
     public ?Owner $peer = null;
 
     #[ORM\Column]
     public int $rank = 0;
 }
 
-// On Owner: #[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'owner')] $seats
-// and #[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'peer')] $peerSeats.
-
 BelongsToMany::make('peers', 'owners')
-    ->storedAs('seats')          // mapped by `owner`, so `owner` is the parent side
-    ->through(Seat::class)
+    ->through(Seat::class, parent: 'owner', related: 'peer')
     ->fields(Integer::make('rank')),
 BelongsToMany::make('followers', 'owners')
-    ->storedAs('peerSeats')      // mapped by `peer`, so `peer` is the parent side
-    ->through(Seat::class)
+    ->through(Seat::class, parent: 'peer', related: 'owner')
     ->fields(Integer::make('rank')),
 ```
 
-The other `ManyToOne` to the owner is the related side. Reads, includes, counts, filters
-through the relation, `pivot.`-prefixed paths and writes all use these sides, and a write
-creates or removes only the parent's own rows. A relation that isn't stored as such a
-collection fails the cache warm-up naming both associations, and so does an entity
-holding more than one association to the related type besides the parent side, since
-nothing the relation declares tells them apart.
+`parent:` names the entity's `ManyToOne` pointing back at the parent and `related:` the one
+pointing at the member. Either can be left out when the other settles it. Each name must
+be a `ManyToOne` of the entity to the parent's entity or the related type's, or the cache
+warm-up fails naming the associations it could be.
+
+A relation that names neither side can still be stored as the parent's `OneToMany` of the
+entity, mapped by its own side: `->storedAs('seats')` on an owner whose
+`#[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'owner')] $seats` points at the
+`owner` association, which becomes the parent side.
+
+Reads, includes, counts, filters through the relation, `pivot.`-prefixed paths and writes
+all use these sides, and a write creates or removes only the parent's own rows. Any
+association entity whose sides are still ambiguous fails the cache warm-up, naming the
+relation, the entity and the candidate associations, and the `through()` that settles it,
+such as `->through(Seat::class, parent: 'owner')`. That includes an entity with one
+association to the parent but several to the related type. An application with such an
+entity fails warm-up until the relation names the side.
 
 ### Computed pivot fields
 

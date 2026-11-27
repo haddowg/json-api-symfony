@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\SelfThrough;
 
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister;
 use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use Symfony\Component\Uid\Uuid;
@@ -56,6 +57,15 @@ final class StFixtures
         $key = self::key($type, $n);
 
         return $key instanceof Uuid ? 'own_' . $key->toRfc4122() : (string) $key;
+    }
+
+    /**
+     * The id owner `$n` of `$type` renders under: its wire id, with a uuid-shaped one in
+     * lower case whatever case it is stored in.
+     */
+    public static function renderedId(string $type, int $n): string
+    {
+        return StoredIdForms::comparable(self::wireId($type, $n));
     }
 
     /**

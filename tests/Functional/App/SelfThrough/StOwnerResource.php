@@ -17,8 +17,9 @@ use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\PrefixUuidEncoder;
 /**
  * Owners seated beside owners of their own type: `peers` are the owners each one seats,
  * `followers` the owners seating it. On Doctrine both read one seat entity, holding two
- * associations to the owner class, and each relation is stored as the owner's collection
- * mapped by its own side. The in-memory store keeps the member lists.
+ * associations to the owner class: `peers` is stored as the owner's collection mapped by
+ * its own side, and `followers` names its sides in `through()`. The in-memory store keeps
+ * the member lists.
  */
 abstract class StOwnerResource extends AbstractResource
 {
@@ -59,8 +60,13 @@ abstract class StOwnerResource extends AbstractResource
         // The row's own side of the seat, the parent, and the member's.
         [$parentSide, $memberSide] = $collection === 'seats' ? ['owner', 'peer'] : ['peer', 'owner'];
 
-        return $relation->storedAs($collection)
-            ->through(static::SEAT)
+        // `peers` is stored as the seats mapped by its own side, and `followers` names its
+        // sides, the two ways a relation through a self-linking entity says which is which.
+        $relation = $collection === 'seats'
+            ? $relation->storedAs($collection)->through(static::SEAT)
+            : $relation->through(static::SEAT, parent: $parentSide, related: $memberSide);
+
+        return $relation
             ->fields(Integer::make('rank'))
             ->withFilters(
                 Where::make('rank', 'pivot.rank'),

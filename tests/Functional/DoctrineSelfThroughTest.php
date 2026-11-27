@@ -41,9 +41,9 @@ final class DoctrineSelfThroughTest extends SelfThroughConformanceTestCase
     #[DataProvider('types')]
     public function eachSideRendersTheRankOfItsOwnSeat(string $type): void
     {
-        self::assertSame([StFixtures::wireId($type, 3) => ['rank' => 2]], $this->pivots(\sprintf('/%s/%s/relationships/peers', $type, $this->id($type, 2))));
-        self::assertSame([StFixtures::wireId($type, 1) => ['rank' => 1]], $this->pivots(\sprintf('/%s/%s/relationships/followers', $type, $this->id($type, 2))));
-        self::assertSame([StFixtures::wireId($type, 3) => ['rank' => 2]], $this->pivots(\sprintf('/%s/%s/peers', $type, $this->id($type, 2))));
+        self::assertSame([StFixtures::renderedId($type, 3) => ['rank' => 2]], $this->pivots(\sprintf('/%s/%s/relationships/peers', $type, $this->id($type, 2))));
+        self::assertSame([StFixtures::renderedId($type, 1) => ['rank' => 1]], $this->pivots(\sprintf('/%s/%s/relationships/followers', $type, $this->id($type, 2))));
+        self::assertSame([StFixtures::renderedId($type, 3) => ['rank' => 2]], $this->pivots(\sprintf('/%s/%s/peers', $type, $this->id($type, 2))));
     }
 
     #[Test]
@@ -108,7 +108,7 @@ final class DoctrineSelfThroughTest extends SelfThroughConformanceTestCase
     {
         $response = $this->handle(\sprintf('/%s/%s/relationships/peers', $type, $this->id($type, 3)), 'POST', ['data' => [$this->identifier($type, 1, 4)]]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-        $member = ['type' => $type, 'id' => StFixtures::wireId($type, 1), 'meta' => ['pivot' => ['rank' => 4]]];
+        $member = ['type' => $type, 'id' => StFixtures::renderedId($type, 1), 'meta' => ['pivot' => ['rank' => 4]]];
         self::assertSame([$member], $this->decode($response)['data'] ?? null);
 
         $response = $this->handle(\sprintf('/%s/%s/relationships/peers', $type, $this->id($type, 2)), 'DELETE', ['data' => [$this->identifier($type, 3)]]);
