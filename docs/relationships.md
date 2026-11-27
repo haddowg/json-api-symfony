@@ -943,7 +943,8 @@ BelongsToMany::make('tracks', 'tracks')
 The `fields()` declaration drives pivot **render**, **write / validate** and **sort**.
 It renders each member's pivot values as `meta.pivot` on the related endpoint
 (`GET /playlists/1/tracks`), the relationship-linkage endpoint (`GET
-/playlists/1/relationships/tracks`), **and in a primary-resource document's
+/playlists/1/relationships/tracks`), the `200` linkage a write to that endpoint answers
+with, which lists the members the relationship endpoint then serves, **and in a primary-resource document's
 relationships block** — wherever that relation's linkage data renders, i.e. when it is
 `?include`d (`GET /playlists/1?include=tracks`) or renders data by default
 (`withData()`). It also makes `?sort=position` recognised on that related endpoint
@@ -1177,6 +1178,57 @@ BelongsToMany::make('tracks', 'tracks')
     ->fields(Integer::make('position'))
     ->through(PlaylistTrack::class); // name the association entity explicitly
 ```
+
+#### A type linked to itself
+
+An association entity can link a type to itself, such as a seat placing one owner beside
+another. Its two `ManyToOne`s both target the owner, so the target class can't say which
+one points back at the parent. Name the sides in `through()`:
+
+```php
+#[ORM\Entity]
+class Seat
+{
+    #[ORM\ManyToOne(targetEntity: Owner::class)]
+    public ?Owner $owner = null;
+
+    #[ORM\ManyToOne(targetEntity: Owner::class)]
+    public ?Owner $peer = null;
+
+    #[ORM\Column]
+    public int $rank = 0;
+}
+
+BelongsToMany::make('peers', 'owners')
+    ->through(Seat::class, parent: 'owner', related: 'peer')
+    ->fields(Integer::make('rank')),
+BelongsToMany::make('followers', 'owners')
+    ->through(Seat::class, parent: 'peer', related: 'owner')
+    ->fields(Integer::make('rank')),
+```
+
+`parent:` names the entity's `ManyToOne` pointing back at the parent and `related:` the one
+pointing at the member. Either can be left out when the other settles it. Each name must
+be a `ManyToOne` of the entity to the parent's entity or the related type's, or the cache
+warm-up fails naming the associations it could be.
+
+A relation that names neither side can still be stored as the parent's `OneToMany` of the
+entity, mapped by its own side: `->storedAs('seats')` on an owner whose
+`#[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'owner')] $seats` points at the
+`owner` association, which becomes the parent side.
+
+A relation that declares `through()` reads its members through that entity's rows even
+when it declares no pivot field, as `mates` would with `->through(Seat::class, parent:
+'owner', related: 'peer')` and nothing else, and a write creates and removes those rows.
+Only a relation with a stored pivot field takes `pivot.`-prefixed filters and paths.
+
+Reads, includes, counts, filters through the relation, `pivot.`-prefixed paths and writes
+all use these sides, and a write creates or removes only the parent's own rows. Any
+association entity whose sides are still ambiguous fails the cache warm-up, naming the
+relation, the entity and the candidate associations, and the `through()` that settles it,
+such as `->through(Seat::class, parent: 'owner')`. That includes an entity with one
+association to the parent but several to the related type. An application with such an
+entity fails warm-up until the relation names the side.
 
 ### Computed pivot fields
 

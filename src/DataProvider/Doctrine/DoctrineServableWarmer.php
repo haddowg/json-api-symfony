@@ -215,9 +215,9 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 continue;
             }
 
-            if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== []) {
+            if ($relation instanceof BelongsToMany && PivotAssociationResolver::readsRows($relation)) {
                 throw new \LogicException(\sprintf(
-                    'Relation "%s" on resource type "%s" is a BelongsToMany with stored pivot fields, which reads its association entity through the parent\'s mapping, but "%s" is not a Doctrine entity. Serve "%s" from an entity, or declare the relation as a HasMany with a foreign key.',
+                    'Relation "%s" on resource type "%s" is a BelongsToMany with stored pivot fields or a through() class, which reads its association entity through the parent\'s mapping, but "%s" is not a Doctrine entity. Serve "%s" from an entity, or declare the relation as a HasMany with a foreign key.',
                     $relation->name(),
                     $type,
                     $type,
@@ -528,7 +528,7 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
                 if (!isset($this->entityClassByType[$relatedType])) {
                     throw $refuse(\sprintf('the relation "%s" reaches the type "%s", which no Doctrine entity maps.', $hop->relation->name(), $relatedType));
                 }
-                $isPivot = $hop->relation instanceof \haddowg\JsonApi\Resource\Field\BelongsToMany && $hop->relation->storedPivotFields() !== [];
+                $isPivot = PivotAssociationResolver::readsRows($hop->relation);
                 $foreignKey = $paths->foreignKeyOf($hop->relation);
                 if ($foreignKey !== null && $item instanceof SortInterface) {
                     throw $refuse(\sprintf('the relation "%s" reads through the foreign key "%s", which a sort can\'t join as one row per parent.', $hop->relation->name(), $foreignKey->name));
@@ -574,7 +574,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
     {
         $relation = $hop->relation;
         $relatedType = $hop->relatedType();
-        if (!$relation instanceof BelongsToMany || !$this->pivotAssociations->isPivotRelation($relation) || !isset($this->entityClassByType[$relatedType])) {
+        // Only a stored pivot field's rows are walked by a path yet.
+        if (!$relation instanceof BelongsToMany || $relation->storedPivotFields() === [] || !isset($this->entityClassByType[$relatedType])) {
             throw $refuse(\sprintf('the Doctrine provider reads the pivot rows of a BelongsToMany with stored pivot fields over an association entity, and "%s" is not one.', $relation->name()));
         }
         $parentClass = $from?->getName() ?? $this->entityClassByType[$hop->parentType] ?? null;
@@ -876,12 +877,13 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         $relations = $paths?->relationsAlong($path) ?? [];
         foreach ($segments as $index => $segment) {
             $last = $index === \count($segments) - 1;
-            if (!$metadata->hasAssociation($segment)) {
-                $relation = $relations[$index] ?? null;
-                if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== [] && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])) {
-                    /** @var class-string $owner */
-                    $owner = $metadata->getName();
-                    $pivot = $this->pivotAssociations->discover($relation, $owner, $this->entityClassByType[$relation->relatedTypes()[0]]);
+            $relation = $relations[$index] ?? null;
+            if ($relation instanceof BelongsToMany && PivotAssociationResolver::readsRows($relation) && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])) {
+                /** @var class-string $owner */
+                $owner = $metadata->getName();
+                $pivot = $this->pivotAssociations->discover($relation, $owner, $this->entityClassByType[$relation->relatedTypes()[0]]);
+                // A relation stored as the owner's collection of its rows reaches its members through them.
+                if (!$metadata->hasAssociation($segment) || ($metadata->isCollectionValuedAssociation($segment) && $metadata->getAssociationTargetClass($segment) === $pivot->entityClass)) {
                     $metadata = $this->entityManager->getClassMetadata($this->entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty));
                     if ($last) {
                         return $metadata->getName();
@@ -889,7 +891,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
                     continue;
                 }
-
+            }
+            if (!$metadata->hasAssociation($segment)) {
                 $foreignKey = $last ? DoctrineIdentifiers::foreignKeyAssociation($metadata, $segment) : null;
 
                 return $foreignKey === null ? null : $metadata->getAssociationTargetClass($foreignKey);
@@ -920,11 +923,12 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         $server = $this->servers->get($serverName);
 
         foreach ($this->typeMetadata->relationsFor($server, $type) as $relation) {
-            // Only a stored pivot field needs an association entity; a relation whose
-            // pivot fields are all computed reads its plain join table.
-            if (!$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+            // A stored pivot field or a through() class needs an association entity; a
+            // relation with neither reads its plain join table.
+            if (!PivotAssociationResolver::readsRows($relation)) {
                 continue;
             }
+            \assert($relation instanceof BelongsToMany);
 
             $relatedType = $relation->relatedTypes()[0] ?? null;
             if ($relatedType === null || !isset($this->entityClassByType[$relatedType])) {

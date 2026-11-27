@@ -92,6 +92,8 @@ declaration that would only break at request time fails the build instead:
 |---|---|
 | A `sortable()` / `filterable` column does not resolve to a real field/association (commonly a `computed()` field marked sortable, whose sort column defaults to the field name) | *The sort/filter "…" on JSON:API type "…" targets column "…", which is not a field or association on …* |
 | A pivot `belongsToMany` declaring a stored pivot field whose association entity cannot be discovered (one whose pivot fields are all computed needs none) | *Could not auto-detect a Doctrine association entity for the pivot relation "…" … Declare it explicitly with ->through(PivotEntity::class).* |
+| A pivot `belongsToMany` whose association entity holds several `ManyToOne`s that could be its parent side, or its related side, and whose relation doesn't name that side in `through()` (or, for the parent side, isn't stored as the parent's `OneToMany` mapped by it) | *The pivot relation "…" reads …, which holds several ManyToOne associations that could be its parent side, to …: owner, peer. Name the one that points back at the parent, such as ->through(Seat::class, parent: 'owner').* (or *…its related side … such as ->through(Membership::class, related: 'user').*) |
+| A `through(parent:, related:)` name that is no `ManyToOne` of the entity to the parent's or the related type's entity | *The pivot relation "…" declares through(Seat::class, parent: 'rank'), but … has no ManyToOne "rank" to …. Its ManyToOne associations to … are: owner, peer.* |
 | A deprecated `pivot.`-prefixed `WhereThrough`, `WhereThroughIn`, `WhereHas` or `WhereDoesntHave`, or a `pivot.`-prefixed `WhereHasMatching`, whose path goes on from the pivot row to an entity no registered type serves, or several do | *The JSON:API resource for type "…" declares the filter "…" of relation "…", whose deprecated path "…" goes on from the pivot row to an entity no single registered type serves … Register exactly one resource type for that entity, or migrate the filter to a ->through() path that does not reach it.* |
 | A `WhereMorph` over a `MorphTo` identified only by a closure, or not at all, or over a `MorphToMany` without `identifiedByRows()` | *The filter "…" on JSON:API type "…" is a WhereMorph over the relation "…", which the Doctrine provider cannot query: declare the MorphTo with identifiedByColumns(type: ..., id: ...)…* |
 | A `WhereMorph` whose `MorphTo` names a column that is not a mapped field of the entity | *… whose identifiedByColumns() names "…", which is not a mapped field of …* |
@@ -1512,14 +1514,18 @@ the `pivot.` convention are covered on
 **Stored pivot data only exists over an association entity.** A plain `#[ORM\ManyToMany]`
 join table holds only the two foreign keys; Doctrine cannot map a `position` column
 on it. A relation whose pivot fields are all
-[computed](relationships.md#computed-pivot-fields) reads that plain join table and runs
-no pivot query. So a pivot relation must be backed by an **association entity** — `Playlist
+[computed](relationships.md#computed-pivot-fields), or that declares none, reads that plain
+join table and runs no pivot query, unless it names an association entity with
+`->through()`: then it reads and writes that entity's rows, with or without pivot fields. So a pivot relation must be backed by an **association entity** — `Playlist
 -> OneToMany -> PlaylistTrack(position, addedAt) -> ManyToOne -> Track`. The provider
 **auto-detects** that entity from your metadata (`PivotAssociationResolver`: the one
 to-many on the parent whose target also has a `ManyToOne` to the far type), or
 honours an explicit `->through(PlaylistTrack::class)` when auto-detection is
 ambiguous (two candidate entities) or finds none — in which case it throws a
-`\LogicException` naming the relation.
+`\LogicException` naming the relation. The entity's `ManyToOne` to the parent is the
+parent side and its `ManyToOne` to the far type the related side; an entity linking a
+type to itself is covered under
+[relationships → a type linked to itself](relationships.md#a-type-linked-to-itself).
 
 The fetch is **one** DQL statement over the association entity, with the far entity
 as the query root so the shared filter/sort/count/window machinery applies to the

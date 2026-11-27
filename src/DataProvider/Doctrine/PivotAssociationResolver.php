@@ -30,8 +30,16 @@ use haddowg\JsonApi\Resource\Field\RelationInterface;
  *   type. Zero matches, or more than one (ambiguous), throws a {@see \LogicException}
  *   naming the relation and pointing at `->through(PivotEntity::class)`.
  *
- * Resolution is cached per `(relation-name, parent-class, far-class)` so a
- * repeated related fetch does not re-scan metadata.
+ * `through(parent:, related:)` names the entity's association on either side, which is
+ * checked to be a `ManyToOne` to the right class. A side it leaves out is the entity's
+ * one association to that class; an entity holding several associations to the parent
+ * class, as a self-referencing one does, may instead take its parent side from the
+ * parent's `OneToMany` the relation is stored as, the association that collection is
+ * mapped by. Any other ambiguity throws, naming the candidates and the `through()` that
+ * settles it, rather than pick one.
+ *
+ * Resolution is cached per relation name, column, `through()` class and side names,
+ * parent class and far class, so a repeated related fetch does not re-scan metadata.
  */
 final class PivotAssociationResolver
 {
@@ -50,7 +58,17 @@ final class PivotAssociationResolver
      */
     public function isPivotRelation(RelationInterface $relation): bool
     {
-        return $relation instanceof BelongsToMany && $relation->storedPivotFields() !== [];
+        return self::readsRows($relation);
+    }
+
+    /**
+     * Whether `$relation` reads its members through the rows of an association entity: a
+     * {@see BelongsToMany} declaring a stored pivot field, or naming the entity with
+     * `through()`, as core's relation paths count it.
+     */
+    public static function readsRows(RelationInterface $relation): bool
+    {
+        return $relation instanceof BelongsToMany && ($relation->storedPivotFields() !== [] || $relation->pivotThrough() !== null);
     }
 
     /**
@@ -85,7 +103,7 @@ final class PivotAssociationResolver
      */
     public function discover(BelongsToMany $relation, string $parentClass, string $farClass): PivotAssociation
     {
-        $cacheKey = $relation->name() . "\0" . $parentClass . "\0" . $farClass;
+        $cacheKey = \implode("\0", [$relation->name(), $relation->column() ?? '', $relation->pivotThrough() ?? '', $relation->pivotParentSide() ?? '', $relation->pivotRelatedSide() ?? '', $parentClass, $farClass]);
 
         return $this->cache[$cacheKey] ??= $this->detect($relation, $parentClass, $farClass);
     }
@@ -122,11 +140,9 @@ final class PivotAssociationResolver
         }
 
         $metadata = $this->entityManager->getClassMetadata($through);
+        $association = $this->sides($relation, $metadata, $parentClass, $farClass);
 
-        $parentProperty = $this->singleValuedTargeting($metadata, $parentClass);
-        $farProperty = $this->singleValuedTargeting($metadata, $farClass);
-
-        if ($parentProperty === null || $farProperty === null) {
+        if ($association === null) {
             throw new \LogicException(\sprintf(
                 'The pivot relation "%s" declares through("%s"), but that entity does not carry a ManyToOne to both the parent (%s) and the related type (%s).',
                 $relation->name(),
@@ -136,10 +152,7 @@ final class PivotAssociationResolver
             ));
         }
 
-        /** @var class-string $entityClass */
-        $entityClass = $metadata->getName();
-
-        return new PivotAssociation($entityClass, $parentProperty, $farProperty);
+        return $association;
     }
 
     /**
@@ -154,27 +167,22 @@ final class PivotAssociationResolver
         $parentMetadata = $this->entityManager->getClassMetadata($parentClass);
 
         $matches = [];
+        $checked = [];
         foreach ($parentMetadata->getAssociationNames() as $field) {
             if (!$parentMetadata->isCollectionValuedAssociation($field)) {
                 continue;
             }
 
-            $candidateClass = $parentMetadata->getAssociationTargetClass($field);
-            $candidateMetadata = $this->entityManager->getClassMetadata($candidateClass);
-
-            $farProperty = $this->singleValuedTargeting($candidateMetadata, $farClass);
-            if ($farProperty === null) {
+            $candidateMetadata = $this->entityManager->getClassMetadata($parentMetadata->getAssociationTargetClass($field));
+            if (isset($checked[$candidateMetadata->getName()])) {
                 continue;
             }
+            $checked[$candidateMetadata->getName()] = true;
 
-            $parentProperty = $this->singleValuedTargeting($candidateMetadata, $parentClass);
-            if ($parentProperty === null) {
-                continue;
+            $association = $this->sides($relation, $candidateMetadata, $parentClass, $farClass);
+            if ($association !== null) {
+                $matches[$association->entityClass] = $association;
             }
-
-            /** @var class-string $entityClass */
-            $entityClass = $candidateMetadata->getName();
-            $matches[$entityClass] = new PivotAssociation($entityClass, $parentProperty, $farProperty);
         }
 
         if (\count($matches) === 1) {
@@ -199,26 +207,168 @@ final class PivotAssociationResolver
     }
 
     /**
-     * The name of the single-valued (`ManyToOne`/`OneToOne`) association on
-     * `$metadata` whose target is `$targetClass`, or `null` when none matches.
+     * The sides of `$metadata` linking the parent to the far type, or `null` when it holds
+     * no `ManyToOne` to one of them.
+     *
+     * A side `through()` names is taken as named, once it is checked to be a `ManyToOne`
+     * to the right class. Otherwise the entity's one association to the parent class is
+     * the parent side; when it holds several, as a self-referencing one does, the
+     * relation's column may name the parent's `OneToMany` to the entity, and the
+     * association that collection is mapped by is the parent side. The related side is
+     * then the one association to the far type left.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param class-string          $parentClass
+     * @param class-string          $farClass
+     *
+     * @throws \LogicException when a named side is no such association, or the entity holds several candidates for a side the relation doesn't name
+     */
+    private function sides(BelongsToMany $relation, ClassMetadata $metadata, string $parentClass, string $farClass): ?PivotAssociation
+    {
+        $toParent = $this->singleValuedTargeting($metadata, $parentClass);
+        $toFar = $this->singleValuedTargeting($metadata, $farClass);
+        $namedParent = $relation->pivotParentSide();
+        $namedRelated = $relation->pivotRelatedSide();
+        $this->assertNamed($relation, $metadata, 'parent', $namedParent, $parentClass, $toParent);
+        $this->assertNamed($relation, $metadata, 'related', $namedRelated, $farClass, $toFar);
+
+        $toParent = \array_values(\array_diff($toParent, [$namedRelated]));
+        if ($toParent === []) {
+            return null;
+        }
+        $parentProperty = $namedParent ?? (\count($toParent) === 1 ? $toParent[0] : $this->storedSide($relation, $metadata, $parentClass, $toParent));
+
+        $toFar = \array_values(\array_diff($toFar, [$parentProperty]));
+        if ($namedRelated === null && \count($toFar) > 1) {
+            throw $this->ambiguous($relation, $metadata, 'related', $farClass, $toFar, \sprintf(
+                'Name the one that points at the member, such as ->through(%s::class, related: \'%s\').',
+                $this->shortName($metadata),
+                $toFar[0],
+            ));
+        }
+        $farProperty = $namedRelated ?? $toFar[0] ?? null;
+        if ($farProperty === null) {
+            return null;
+        }
+
+        /** @var class-string $entityClass */
+        $entityClass = $metadata->getName();
+
+        return new PivotAssociation($entityClass, $parentProperty, $farProperty);
+    }
+
+    /**
+     * Checks a side `through()` names is a `ManyToOne` of the entity to its class.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param list<string>          $candidates the entity's associations to `$class`
+     *
+     * @throws \LogicException when it is not
+     */
+    private function assertNamed(BelongsToMany $relation, ClassMetadata $metadata, string $side, ?string $named, string $class, array $candidates): void
+    {
+        if ($named === null || \in_array($named, $candidates, true)) {
+            return;
+        }
+
+        throw new \LogicException(\sprintf(
+            'The pivot relation "%s" declares through(%s::class, %s: \'%s\'), but %s has no ManyToOne "%s" to %s. %s',
+            $relation->name(),
+            $this->shortName($metadata),
+            $side,
+            $named,
+            $metadata->getName(),
+            $named,
+            $class,
+            $candidates === []
+                ? \sprintf('It has no ManyToOne to %s at all.', $class)
+                : \sprintf('Its ManyToOne associations to %s are: %s.', $class, \implode(', ', $candidates)),
+        ));
+    }
+
+    /**
+     * The parent side of an entity holding several associations to the parent class,
+     * when the relation is stored as the parent's `OneToMany` mapped by one of them.
+     *
+     * @param ClassMetadata<object>  $metadata
+     * @param class-string           $parentClass
+     * @param non-empty-list<string> $toParent
+     *
+     * @throws \LogicException when the relation is not stored as such a collection
+     */
+    private function storedSide(BelongsToMany $relation, ClassMetadata $metadata, string $parentClass, array $toParent): string
+    {
+        $parentMetadata = $this->entityManager->getClassMetadata($parentClass);
+        $collection = $relation->column() ?? $relation->name();
+        if ($parentMetadata->hasAssociation($collection)
+            && $parentMetadata->isCollectionValuedAssociation($collection)
+            && $parentMetadata->isAssociationInverseSide($collection)
+            && $this->entityManager->getClassMetadata($parentMetadata->getAssociationTargetClass($collection))->getName() === $metadata->getName()) {
+            $mappedBy = $parentMetadata->getAssociationMappedByTargetField($collection);
+            if (\in_array($mappedBy, $toParent, true)) {
+                return $mappedBy;
+            }
+        }
+
+        throw $this->ambiguous($relation, $metadata, 'parent', $parentClass, $toParent, \sprintf(
+            'Name the one that points back at the parent, such as ->through(%s::class, parent: \'%s\').',
+            $this->shortName($metadata),
+            $toParent[0],
+        ));
+    }
+
+    /**
+     * @param ClassMetadata<object> $metadata
+     * @param list<string>          $candidates
+     */
+    private function ambiguous(BelongsToMany $relation, ClassMetadata $metadata, string $side, string $class, array $candidates, string $fix): \LogicException
+    {
+        return new \LogicException(\sprintf(
+            'The pivot relation "%s" reads %s, which holds several ManyToOne associations that could be its %s side, to %s: %s. %s',
+            $relation->name(),
+            $metadata->getName(),
+            $side,
+            $class,
+            \implode(', ', $candidates),
+            $fix,
+        ));
+    }
+
+    /**
+     * @param ClassMetadata<object> $metadata
+     */
+    private function shortName(ClassMetadata $metadata): string
+    {
+        $name = $metadata->getName();
+        $at = \strrpos($name, '\\');
+
+        return $at === false ? $name : \substr($name, $at + 1);
+    }
+
+    /**
+     * The names of the single-valued (`ManyToOne`/`OneToOne`) associations on
+     * `$metadata` whose target is `$targetClass`.
      *
      * @param ClassMetadata<object> $metadata
      * @param class-string          $targetClass
+     *
+     * @return list<string>
      */
-    private function singleValuedTargeting(ClassMetadata $metadata, string $targetClass): ?string
+    private function singleValuedTargeting(ClassMetadata $metadata, string $targetClass): array
     {
         $targetName = $this->entityManager->getClassMetadata($targetClass)->getName();
 
+        $fields = [];
         foreach ($metadata->getAssociationNames() as $field) {
             if (!$metadata->isSingleValuedAssociation($field)) {
                 continue;
             }
 
             if ($this->entityManager->getClassMetadata($metadata->getAssociationTargetClass($field))->getName() === $targetName) {
-                return $field;
+                $fields[] = $field;
             }
         }
 
-        return null;
+        return $fields;
     }
 }

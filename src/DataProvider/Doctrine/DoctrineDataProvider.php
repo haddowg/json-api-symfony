@@ -2797,7 +2797,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * value]` read from each row's `pivot_<field>` scalar aliases and cast per the
      * relation's declared field types.
      *
-     * @param list<array<int|string, mixed>> $rows
+     * @param list<array<int|string, mixed>|object> $rows
      *
      * @return PivotCollectionResult<object>
      */
@@ -2816,11 +2816,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $items = [];
         $pivotMap = [];
         foreach ($rows as $row) {
-            $far = $row[0] ?? null;
+            // A relation with no stored pivot field selects no scalar, so its rows are the entities.
+            $far = \is_object($row) ? $row : ($row[0] ?? null);
             if (!\is_object($far)) {
                 continue;
             }
             $items[] = $far;
+            $row = \is_array($row) ? $row : [];
 
             $wireId = $this->ids->wireId($relatedMetadata, $this->ids->valueOf($this->entityManager->getClassMetadata($far::class), $far), $encoder);
             if ($wireId === null) {
