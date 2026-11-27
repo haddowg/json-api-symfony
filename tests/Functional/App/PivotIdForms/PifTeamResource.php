@@ -25,6 +25,10 @@ final class PifTeamResource extends AbstractResource
                 ->through(PifSeat::class)
                 ->fields(Str::make('role')->nullable()->build())
                 ->withData(),
+            BelongsToMany::make('squad', 'pif-squads')
+                ->through(PifSeat::class)
+                ->fields(Str::make('role')->nullable()->build())
+                ->countable(),
             BelongsTo::make('coach', 'pif-coaches')->nullable(),
         ];
     }

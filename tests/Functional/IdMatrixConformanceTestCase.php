@@ -225,6 +225,40 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertNull($ref('/im-notes/4'));
     }
 
+    /**
+     * A guid owner whose key its store keeps in capitals, with note 5 naming it in capitals
+     * through both its foreign key and its polymorphic pair.
+     */
+    abstract protected function seedCapitalGuidOwner(): void;
+
+    public const string CAPITAL_GUID = '5F0C3B2D-1E00-4A4E-9C55-7A4E0000AAAA';
+
+    #[Test]
+    public function aGuidOwnerKeptInCapitalsKeepsItsIncludesAndCountsInLowerCase(): void
+    {
+        $this->seedCapitalGuidOwner();
+        $wire = \strtolower(self::CAPITAL_GUID);
+
+        foreach ([$wire, self::CAPITAL_GUID] as $id) {
+            $data = $this->fetch('/im-guid-owners/' . $id)['data'] ?? null;
+            self::assertIsArray($data);
+            self::assertSame($wire, $data['id'] ?? null);
+        }
+
+        $owners = $this->rowsById($this->fetch('/im-guid-owners?include=notes&withCount=notes', self::COUNTS_ACCEPT));
+        self::assertArrayHasKey($wire, $owners);
+        self::assertSame(['5'], $this->ids($this->relationship($owners[$wire], 'notes')['data'] ?? null));
+        self::assertSame(['total' => 1], $this->relationship($owners[$wire], 'notes')['meta'] ?? null);
+
+        self::assertSame(['5'], $this->ids($this->fetch('/im-guid-owners/' . $wire . '/notes')['data'] ?? null));
+        self::assertSame(['5'], $this->ids($this->fetch('/im-guid-owners/' . $wire . '/relationships/notes')['data'] ?? null));
+
+        $note = $this->fetch('/im-notes/5?include=ref');
+        self::assertSame(['type' => 'im-guid-owners', 'id' => $wire], $this->relationship($note['data'] ?? null, 'ref')['data'] ?? null);
+        self::assertSame(['im-guid-owners:' . $wire], $this->includedKeys($note));
+        self::assertSame(['5'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-guid-owners&filter[ref][id]=' . $wire)['data'] ?? null));
+    }
+
     #[Test]
     public function aMorphManyMatchesAStoredIdInEitherForm(): void
     {

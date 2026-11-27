@@ -120,13 +120,7 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
         self::assertStringContainsString('i0_.guidownerid in (', $notes[0]);
     }
 
-    private const string CAPITAL_GUID = '5F0C3B2D-1E00-4A4E-9C55-7A4E0000AAAA';
-
-    /**
-     * A guid owner whose key its column keeps in capitals, with note 5 naming it in
-     * capitals through both its foreign key and its polymorphic pair.
-     */
-    private function seedCapitalGuidOwner(): void
+    protected function seedCapitalGuidOwner(): void
     {
         $entityManager = $this->entityManager();
         $entityManager->persist(new ImGuidOwner(self::CAPITAL_GUID, 'Capital'));

@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\DataProvider;
 use haddowg\JsonApi\Operation\QueryParameters;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Server\Server;
 use haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount;
 use haddowg\JsonApiBundle\Server\TypeMetadataResolver;
@@ -83,7 +84,7 @@ final class RelationCountBatcher
         // object whose identity the render seam keys on.
         $byWireId = [];
         foreach ($parents as $parent) {
-            $byWireId[$serializer->getId($parent)][] = $parent;
+            $byWireId[StoredIdForms::comparable($serializer->getId($parent))][] = $parent;
         }
 
         $counts = [];
@@ -92,7 +93,7 @@ final class RelationCountBatcher
 
             $relationCounts = $this->router->counts($server, $type, $parents, $relation, $criteria, $request);
             foreach ($relationCounts as $wireId => $count) {
-                foreach ($byWireId[(string) $wireId] ?? [] as $parent) {
+                foreach ($byWireId[StoredIdForms::comparable($wireId)] ?? [] as $parent) {
                     $counts[\spl_object_id($parent)][$relation->name()] = $count;
                 }
             }

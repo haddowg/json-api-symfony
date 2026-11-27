@@ -18,6 +18,7 @@ use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataProvider\InMemoryStore;
 use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
@@ -409,7 +410,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         $incoming = [];
         foreach ($linkage->resourceIdentifiers as $identifier) {
             if ($identifier->id !== null) {
-                $incoming[$identifier->id] = $this->relatedTypeOf($relation, $identifier);
+                $incoming[StoredIdForms::comparable($identifier->id)] = $this->relatedTypeOf($relation, $identifier);
             }
         }
         $incomingIds = \array_map('strval', \array_keys($incoming));
@@ -501,6 +502,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         /** @var mixed $id */
         $id = $member->id ?? null;
 
-        return \is_scalar($id) ? (string) $id : \spl_object_hash($member);
+        // A uuid-like id compares in lower case, as the linkage naming it is.
+        return \is_int($id) || \is_string($id) || $id instanceof \Stringable ? StoredIdForms::comparable($id) : (\is_scalar($id) ? (string) $id : \spl_object_hash($member));
     }
 }

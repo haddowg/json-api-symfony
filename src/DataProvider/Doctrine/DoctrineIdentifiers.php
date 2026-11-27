@@ -145,7 +145,8 @@ final class DoctrineIdentifiers
             return $encoder->encode($php);
         }
 
-        return \is_scalar($php) || $php instanceof \Stringable ? (string) $php : null;
+        // A uuid-shaped key renders in lower case, as the Id field renders it.
+        return \is_scalar($php) || $php instanceof \Stringable ? StoredIdForms::comparable($php instanceof \Stringable ? $php : (string) $php) : null;
     }
 
     /**

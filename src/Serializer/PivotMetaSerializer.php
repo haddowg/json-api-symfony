@@ -7,6 +7,7 @@ namespace haddowg\JsonApiBundle\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\ResourceMeta;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Serializer\CountableControlsInterface;
@@ -125,7 +126,8 @@ final class PivotMetaSerializer implements
             return $this->withComputedOnly($meta, $object, $request);
         }
 
-        $pivot = $this->pivotMap[$this->inner->getId($object)] ?? null;
+        $id = $this->inner->getId($object);
+        $pivot = $this->pivotMap[$id] ?? $this->byComparableId()[StoredIdForms::comparable($id)] ?? null;
         $hooked = $this->parent !== null && $this->relation !== null && PivotFields::readsThroughHook($this->relation);
         if ($hooked && $this->relation instanceof BelongsToMany && $pivot !== null) {
             $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
@@ -203,5 +205,21 @@ final class PivotMetaSerializer implements
     protected function inner(): SerializerInterface
     {
         return $this->inner;
+    }
+
+    /**
+     * The pivot map keyed by each member's comparable wire id, so a uuid-shaped id the
+     * provider keyed in capitals matches the lower case the member renders in.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function byComparableId(): array
+    {
+        $keyed = [];
+        foreach ($this->pivotMap as $id => $values) {
+            $keyed[StoredIdForms::comparable($id)] = $values;
+        }
+
+        return $keyed;
     }
 }

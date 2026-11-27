@@ -119,6 +119,7 @@ final class PivotIdFormsTestKernel extends Kernel
         $services->set(PifTeamResource::class);
         $services->set(PifPlayerResource::class);
         $services->set(PifCoachResource::class);
+        $services->set(PifSquadResource::class);
         // The executed statements, so a test can tell how a batch partitions its rows.
         $services->set(QueryCountingLogger::class)->public();
         $services->set(DbalLoggingMiddleware::class)

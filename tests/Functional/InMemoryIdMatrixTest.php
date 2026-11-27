@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixInMemoryTestKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImGuidOwner;
+use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImNote;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -23,6 +25,15 @@ final class InMemoryIdMatrixTest extends IdMatrixConformanceTestCase
     {
         parent::afterBoot();
         IdMatrixInMemoryTestKernel::reset();
+    }
+
+    protected function seedCapitalGuidOwner(): void
+    {
+        IdMatrixInMemoryTestKernel::provider('im-guid-owners')->store()->save(new ImGuidOwner(self::CAPITAL_GUID, 'Capital'));
+        $note = new ImNote(5, 'Five', null, null, null, null, self::CAPITAL_GUID, null, null, null, 'im-posts', 2);
+        $note->refType = 'im-guid-owners';
+        $note->refId = self::CAPITAL_GUID;
+        IdMatrixInMemoryTestKernel::provider('im-notes')->store()->save($note);
     }
 
     #[Test]

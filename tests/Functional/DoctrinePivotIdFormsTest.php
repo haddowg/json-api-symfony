@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifCoach;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifPlayer;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifTeam;
@@ -163,6 +164,44 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
         self::assertStringContainsString('lower(', $seats[0]);
         // The column itself is compared as stored, so an index on it serves the query.
         self::assertStringNotContainsString('lower(p1_.playerid) in', $seats[0]);
+    }
+
+    #[Test]
+    public function aPivotMemberKeyedInCapitalsWithNoEncoderKeepsItsIncludesCountsAndPivot(): void
+    {
+        [$ann, $bob] = [\strtolower(self::ANN), \strtolower(self::BOB)];
+        $counts = ['HTTP_ACCEPT' => 'application/vnd.api+json;profile="' . CountableProfile::URI . '"'];
+
+        $team = $this->get('/pif-teams/' . self::team(self::RED) . '?include=squad.teams');
+        self::assertSame([$ann => 'captain', $bob => 'keeper'], $this->roles($this->data($team), 'squad'));
+        $squads = $this->included($team, 'pif-squads');
+        self::assertSame([$ann, $bob], \array_keys($squads));
+        self::assertSame([$ann => 'captain', $bob => 'keeper'], $this->includedRoles($team, 'pif-squads'));
+        self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($squads[$ann], 'teams'));
+
+        foreach ([$ann, self::ANN] as $id) {
+            $squad = $this->get('/pif-squads/' . $id . '?include=teams');
+            self::assertSame($ann, $this->data($squad)['id'] ?? null);
+            self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($this->data($squad), 'teams'));
+        }
+
+        $listed = $this->decode($this->handle('/pif-squads?withCount=teams&include=teams', extraServer: $counts));
+        $totals = [];
+        foreach ($this->rows($listed) as $row) {
+            self::assertIsString($row['id'] ?? null);
+            $relationships = $row['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            $teams = $relationships['teams'] ?? null;
+            self::assertIsArray($teams);
+            $meta = $teams['meta'] ?? null;
+            self::assertIsArray($meta);
+            $totals[$row['id']] = $meta['total'] ?? null;
+        }
+        self::assertSame([$ann => 2, $bob => 1], $totals);
+
+        $related = $this->rows($this->get('/pif-teams/' . self::team(self::RED) . '/squad'));
+        self::assertSame([$ann, $bob], \array_column($related, 'id'));
+        self::assertSame(['captain', 'keeper'], \array_map(fn(array $row): mixed => $this->pivotOf($row)['role'] ?? null, $related));
     }
 
     #[Test]
