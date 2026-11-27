@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Serializer;
 
+use haddowg\JsonApi\Exception\NoResourceRegistered;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DeclaresRelatedOnlyTypesInterface;
 use haddowg\JsonApi\Resource\DeclaresSingletonTypesInterface;
 use haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface;
+use haddowg\JsonApi\Resource\ProvidesResourcesInterface;
 use haddowg\JsonApi\Resource\ProvidesStorageCastInterface;
 use haddowg\JsonApi\Resource\RejectsReadOnlyAttributesInterface;
 use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
@@ -37,12 +40,12 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * its `meta.pivot` — riding core's existing identifier-meta render path with no core
  * change.
  *
- * It passes the inner resolver's output timezone, relation authorizer, read-only
- * attribute rejection, related-only types and singleton types through, so the linkage it
+ * It passes the inner resolver's registered resources, output timezone, relation
+ * authorizer, read-only attribute rejection, related-only types and singleton types through, so the linkage it
  * builds renders in the server's zone, is withheld from a caller the relation's read
  * expression refuses, and a resource it resolves keeps its server's write rules and links.
  */
-final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, ProvidesStorageCastInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
+final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesResourcesInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, ProvidesStorageCastInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
 {
     /**
      * @param array<string, SerializerInterface> $substitutes the serializers of further types to substitute, keyed by type
@@ -87,6 +90,20 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface, Pr
     public function resourceLinkContributor(): ?ResourceLinkContributorInterface
     {
         return $this->inner->resourceLinkContributor();
+    }
+
+    public function hasResourceFor(string $type): bool
+    {
+        return $this->inner instanceof ProvidesResourcesInterface && $this->inner->hasResourceFor($type);
+    }
+
+    public function resourceFor(string $type): AbstractResource
+    {
+        if (!$this->inner instanceof ProvidesResourcesInterface) {
+            throw new NoResourceRegistered($type);
+        }
+
+        return $this->inner->resourceFor($type);
     }
 
     public function outputTimezone(): ?string

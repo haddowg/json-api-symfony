@@ -294,6 +294,42 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
         self::assertSame(['3' => ['post' => 'Dory:Linus']], $this->pivots($this->linkage($result, 'members')));
     }
 
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aPivotMemberKeepsItsLinksWhereverItRenders(): void
+    {
+        // Members are routed under `crew-members`, render no self link and link `commend`.
+        foreach ([
+            '/cp-crews/2/members',
+            '/cp-crews/2?include=members',
+            '/cp-ships/2?include=crew.members',
+            '/cp-fleets/1?include=ships.crew.members',
+            '/cp-fleets/1/units?include=members',
+            '/cp-fleets/1/vessels?include=members',
+        ] as $path) {
+            $document = $this->get($path);
+            $data = $document['data'] ?? null;
+            self::assertIsArray($data);
+            $resources = [...(\array_is_list($data) ? $data : [$data]), ...$this->included($document)];
+
+            $members = 0;
+            foreach ($resources as $resource) {
+                self::assertIsArray($resource);
+                if (($resource['type'] ?? null) !== 'cp-members') {
+                    continue;
+                }
+                ++$members;
+                self::assertIsString($resource['id'] ?? null);
+                self::assertSame(
+                    ['commend' => ['href' => 'https://example.test/crew-members/' . $resource['id'] . '/-actions/commend']],
+                    $resource['links'] ?? null,
+                    $path,
+                );
+            }
+            self::assertGreaterThan(0, $members, $path);
+        }
+    }
+
     /**
      * The first result of an Atomic Operations batch holding `$operation`.
      *

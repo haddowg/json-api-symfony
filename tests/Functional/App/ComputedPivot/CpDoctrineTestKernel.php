@@ -86,6 +86,7 @@ class CpDoctrineTestKernel extends Kernel
 
         $services = $container->services();
         $services->defaults()->autowire()->autoconfigure();
+        $services->set(CommendMember::class);
 
         $this->configureData($container, $services);
     }
