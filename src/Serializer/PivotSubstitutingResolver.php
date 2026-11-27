@@ -24,7 +24,9 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 /**
  * A {@see SerializerResolverInterface} decorator that substitutes one type's
  * serializer for a {@see PivotMetaSerializer}, delegating every other resolution to
- * the inner resolver (the {@see \haddowg\JsonApi\Server\Server}).
+ * the inner resolver (the {@see \haddowg\JsonApi\Server\Server}). It can substitute
+ * further types too, which is how a relation reached through a nested include renders
+ * its related resources through serializers that rebind their own pivot relations.
  *
  * Used to render pivot meta on the **relationship-linkage** endpoint
  * (`GET /{type}/{id}/relationships/{rel}`): that endpoint renders the parent's
@@ -42,20 +44,24 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  */
 final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, ProvidesStorageCastInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
 {
+    /**
+     * @param array<string, SerializerInterface> $substitutes the serializers of further types to substitute, keyed by type
+     */
     public function __construct(
         private readonly SerializerResolverInterface $inner,
         private readonly string $type,
-        private readonly PivotMetaSerializer $pivotSerializer,
+        private readonly SerializerInterface $pivotSerializer,
+        private readonly array $substitutes = [],
     ) {}
 
     public function serializerFor(string $type): SerializerInterface
     {
-        return $type === $this->type ? $this->pivotSerializer : $this->inner->serializerFor($type);
+        return $type === $this->type ? $this->pivotSerializer : $this->substitutes[$type] ?? $this->inner->serializerFor($type);
     }
 
     public function hasSerializerFor(string $type): bool
     {
-        return $type === $this->type ? true : $this->inner->hasSerializerFor($type);
+        return $type === $this->type || isset($this->substitutes[$type]) || $this->inner->hasSerializerFor($type);
     }
 
     public function relationshipLoadState(): ?RelationshipLoadStateInterface

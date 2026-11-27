@@ -965,11 +965,17 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $pivotResult = $relatedProvider
                     ->fetchRelatedPivotCollection($relatedType, $parent, $relation, $criteria, $request);
 
-                $serializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone());
                 $items = \is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false);
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($items, $relatedType, $request, $server);
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
+                $serializer = new PivotMetaSerializer(
+                    $this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request),
+                    $pivotResult->pivotMap,
+                    $relation,
+                    $parent,
+                    $this->outputTimezone?->timezone(),
+                );
 
                 // A cursor (keyset) pivot page: the provider minted the boundary
                 // tokens off the same query that read the pivot map, so render
@@ -1048,15 +1054,6 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 };
             }
 
-            $serializer = match (true) {
-                $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes, $identifiedPivots),
-                $polymorphic => PolymorphicSerializer::forRelation($relation, $server),
-                // Computed pivot fields need no stored row, so they render off the parent
-                // even where no pivot query ran.
-                PivotFields::hasComputed($relation) => new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
-                default => $server->serializerFor($relatedType),
-            };
-
             // Materialize once so the related members can be both preloaded and
             // rendered. A polymorphic page is preloaded per member type.
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
@@ -1073,6 +1070,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 // countable relations across the related page.
                 $this->applyRelationshipCounts($server, $relatedType, $items, $request);
             }
+
+            $serializer = match (true) {
+                $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes, $identifiedPivots),
+                $polymorphic => PolymorphicSerializer::forRelation($relation, $server),
+                // Computed pivot fields need no stored row, so they render off the parent
+                // even where no pivot query ran.
+                PivotFields::hasComputed($relation) => new PivotMetaSerializer($this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
+                default => $this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request),
+            };
 
             // A cursor (keyset) related page: the provider minted the boundary tokens
             // (it owns the row → boundary-value reader), so render through the
@@ -1231,6 +1237,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             \is_object($related) ? [$related] : [],
             $request,
         );
+
+        if (\is_object($related)) {
+            $serializer = $this->withPivotLinkage($server, $storedType ?? $serializer->getType($related), [$related], $serializer, $request);
+        }
 
         return RelatedResponse::fromResource($related, $serializer);
     }
@@ -2214,8 +2224,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * document renders each `belongsToMany` pivot relation's per-member `meta.pivot` on
      * the linkage in its relationships block — wherever that relation's linkage DATA
      * renders — closing the gap where pivot rode the related/relationship endpoints but
-     * NOT a primary document. Returns `$serializer` untouched (zero
-     * overhead) when the type has no such relation or no request is available.
+     * NOT a primary document. The resources included below the primary level render
+     * their own pivot relations the same way, at every include path the include walk
+     * loaded ({@see pivotLinkageAt()}). Returns `$serializer` untouched (zero
+     * overhead) when no rendered resource has such a relation or no request is available.
      *
      * A pivot relation's linkage data renders for THIS request when it is INCLUDED at
      * the primary level (`isIncludedRelationship('', name, defaults)` — honouring
@@ -2247,7 +2259,26 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      */
     private function withPivotLinkage(Server $server, string $type, array $items, SerializerInterface $serializer, ?JsonApiRequestInterface $request): SerializerInterface
     {
-        if ($request === null || $items === []) {
+        if ($request === null) {
+            return $serializer;
+        }
+
+        return $this->pivotLinkageAt($server, $type, $items, $serializer, $request, '', $this->includeBatcher?->includedLevels() ?? []);
+    }
+
+    /**
+     * {@see withPivotLinkage()} for the resources of `$type` rendered at include path
+     * `$basePath` (`''` for the primary resources). An included relation whose related
+     * resources render pivot relations of their own, at any depth, renders them through
+     * the decorator built for its path, over the parents the include walk loaded there.
+     * Each pivot map is read once per path for every parent at it.
+     *
+     * @param list<object>                                $items  the resources rendered at `$basePath`
+     * @param array<string, array<string, list<object>>> $levels the resources the include walk loaded, keyed by include path then type
+     */
+    private function pivotLinkageAt(Server $server, string $type, array $items, SerializerInterface $serializer, JsonApiRequestInterface $request, string $basePath, array $levels): SerializerInterface
+    {
+        if ($items === []) {
             return $serializer;
         }
 
@@ -2255,7 +2286,28 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
         $relations = [];
         $maps = [];
+        $nested = [];
         foreach ($this->types->readableRelationsFor($server, $type, $request) as $relation) {
+            $included = $request->isIncludedRelationship($basePath, $relation->name(), $defaults);
+
+            if ($included) {
+                $childPath = $basePath === '' ? $relation->name() : $basePath . '.' . $relation->name();
+                $serializers = [];
+                foreach ($levels[$childPath] ?? [] as $childType => $children) {
+                    if (!$server->hasSerializerFor($childType)) {
+                        continue;
+                    }
+                    $plain = $server->serializerFor($childType);
+                    $decorated = $this->pivotLinkageAt($server, $childType, $children, $plain, $request, $childPath, $levels);
+                    if ($decorated !== $plain) {
+                        $serializers[$childType] = $decorated;
+                    }
+                }
+                if ($serializers !== []) {
+                    $nested[$relation->name()] = ['relation' => $relation, 'serializers' => $serializers];
+                }
+            }
+
             // Only a belongsToMany carries pivot fields; a relation whose related type
             // has no pivot-aware provider (or no pivot association) contributes nothing.
             if (!$relation instanceof BelongsToMany) {
@@ -2274,11 +2326,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             // Render the pivot meta only where this relation's linkage DATA renders:
-            // included at the primary level (default-includes honoured) or withData().
-            if (
-                $relation->emitsDataOnlyWhenLoaded()
-                && !$request->isIncludedRelationship('', $relation->name(), $defaults)
-            ) {
+            // included at this path (default-includes honoured) or withData().
+            if ($relation->emitsDataOnlyWhenLoaded() && !$included) {
                 continue;
             }
 
@@ -2293,11 +2342,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 : null;
         }
 
-        if ($relations === []) {
+        if ($relations === [] && $nested === []) {
             return $serializer;
         }
 
-        return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps, $this->outputTimezone?->timezone());
+        return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps, $this->outputTimezone?->timezone(), $nested);
     }
 
     /**
@@ -2557,6 +2606,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // and batched as a fetch does.
         $this->preloadIncludes([$entity], $type, $request, $server);
         $this->applyRelationshipCounts($server, $type, [$entity], $request);
+        // Pivot relations render their meta.pivot as a fetch renders them.
+        $serializer = $this->withPivotLinkage($server, $type, [$entity], $serializer, $request);
 
         // The Location uses the resource's URI segment (its uriType), so it matches
         // the route the client will GET (docs/routing.md); a bare pair has no resource, so
@@ -2685,6 +2736,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         // A PATCH response honours ?include as a fetch does.
         $this->preloadIncludes([$entity], $type, $request, $server);
         $this->applyRelationshipCounts($server, $type, [$entity], $request);
+        // Pivot relations render their meta.pivot as a fetch renders them.
+        $serializer = $this->withPivotLinkage($server, $type, [$entity], $serializer, $request);
 
         $response = DataResponse::fromResource($entity, $serializer);
 

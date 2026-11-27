@@ -8,6 +8,7 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
+use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
  * The shared pivot-linkage rebind both pivot parent-serializer decorators use: given
@@ -39,11 +40,25 @@ trait RebindsPivotLinkage
         SerializerResolverInterface $resolver,
         PivotMetaSerializer $pivotSerializer,
     ): \Closure {
-        $substituting = new PivotSubstitutingResolver(
-            $resolver,
-            $relation->relatedTypes()[0] ?? '',
-            $pivotSerializer,
-        );
+        return $this->reboundBuilder($relation, $resolver, [$relation->relatedTypes()[0] ?? '' => $pivotSerializer]);
+    }
+
+    /**
+     * The relationship callable for `$relation`, rebuilding it through a
+     * {@see PivotSubstitutingResolver} that renders each related type in `$serializers`
+     * through the serializer given for it.
+     *
+     * @param non-empty-array<string, SerializerInterface> $serializers keyed by related type
+     *
+     * @return \Closure(mixed, JsonApiRequestInterface, string): AbstractRelationship
+     */
+    protected function reboundBuilder(
+        RelationInterface $relation,
+        SerializerResolverInterface $resolver,
+        array $serializers,
+    ): \Closure {
+        $type = \array_key_first($serializers);
+        $substituting = new PivotSubstitutingResolver($resolver, $type, $serializers[$type], $serializers);
 
         return static fn(mixed $model, JsonApiRequestInterface $req, string $name): AbstractRelationship => $relation->buildRelationship($model, $req, $substituting);
     }

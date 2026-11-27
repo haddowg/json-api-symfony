@@ -28,7 +28,18 @@ final class CpInMemoryTestKernel extends CpDoctrineTestKernel
     {
         $services->set(InMemoryCpCrewResource::class);
         $services->set(CpMemberResource::class);
+        $services->set(CpShipResource::class);
+        $services->set(CpFleetResource::class);
         $services->set('test.cp_fixtures', CpFixtures::class);
+
+        foreach (['ships', 'fleets'] as $store) {
+            $services->set('test.cp_' . $store . '_provider', InMemoryDataProvider::class)
+                ->factory([service('test.cp_fixtures'), $store])
+                ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
+        }
+        $services->set('test.cp_ships_persister', InMemoryDataPersister::class)
+            ->factory([service('test.cp_fixtures'), 'shipsPersister'])
+            ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
 
         foreach (['members', 'crews'] as $store) {
             $services->set('test.cp_' . $store . '_provider', InMemoryDataProvider::class)
