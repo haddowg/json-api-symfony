@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.25.0](https://github.com/haddowg/json-api-symfony/compare/v2.24.1...v2.25.0) (2026-11-27)
+
+
+### Features
+
+* a belongsToMany can name the parent and related sides of its through entity with the parent and related arguments of through, and a name that is no ManyToOne of the entity to the right class fails cache warm-up ([82fdfb7](https://github.com/haddowg/json-api-symfony/commit/82fdfb7d4b9eefea293b9e3598b361210c872607))
+* an association entity with more than one ManyToOne that could be a pivot relation's parent or related side now fails cache warm-up until the relation names that side in through ([82fdfb7](https://github.com/haddowg/json-api-symfony/commit/82fdfb7d4b9eefea293b9e3598b361210c872607))
+
+
+### Bug Fixes
+
+* a belongsToMany that names an association entity with through and declares no pivot field now reads, counts, filters and writes through that entity's rows ([82fdfb7](https://github.com/haddowg/json-api-symfony/commit/82fdfb7d4b9eefea293b9e3598b361210c872607))
+* a pivot relation through an entity that links a type to itself reads and writes its own side of each row instead of reading its parent as its own member ([82fdfb7](https://github.com/haddowg/json-api-symfony/commit/82fdfb7d4b9eefea293b9e3598b361210c872607))
+* find a uuid-shaped id in either case on every lookup by id and store a written foreign key in its row's own case ([c8937ea](https://github.com/haddowg/json-api-symfony/commit/c8937ea4f0833fd6ad7decc8e8272ff94e25e2d1))
+* keep a notSparseField pivot relation outside the fieldset when it is rebound ([f6885ec](https://github.com/haddowg/json-api-symfony/commit/f6885ec2573a5fd1164c94f3ff5c5a6caf9554f4))
+* keep a pivot member's self-link toggle, counts, fields and nested fieldsets ([18a9e1e](https://github.com/haddowg/json-api-symfony/commit/18a9e1e2f0aacb3ad384fdad38871dc97bb6bdd7))
+* load an action's 202 job resource relations through the include walk like a read ([f6885ec](https://github.com/haddowg/json-api-symfony/commit/f6885ec2573a5fd1164c94f3ff5c5a6caf9554f4))
+* match pivot rows and pivot meta when a pivot foreign key holds its key in another case than the row it points at ([c8937ea](https://github.com/haddowg/json-api-symfony/commit/c8937ea4f0833fd6ad7decc8e8272ff94e25e2d1))
+* partition a windowed include by the lower-cased key so one parent whose rows hold its key in both cases is one partition ([c8937ea](https://github.com/haddowg/json-api-symfony/commit/c8937ea4f0833fd6ad7decc8e8272ff94e25e2d1))
+* render includes, counts and pivot values of a resource whose uuid key is stored in capitals under its lower-case wire id ([c8937ea](https://github.com/haddowg/json-api-symfony/commit/c8937ea4f0833fd6ad7decc8e8272ff94e25e2d1))
+* render pivot meta for a pivot relation reached through a nested include ([18a9e1e](https://github.com/haddowg/json-api-symfony/commit/18a9e1e2f0aacb3ad384fdad38871dc97bb6bdd7))
+* render pivot meta on custom action responses and their includes ([f6885ec](https://github.com/haddowg/json-api-symfony/commit/f6885ec2573a5fd1164c94f3ff5c5a6caf9554f4))
+* render pivot meta on the includes of related endpoint, MorphToMany page and write responses ([18a9e1e](https://github.com/haddowg/json-api-symfony/commit/18a9e1e2f0aacb3ad384fdad38871dc97bb6bdd7))
+* the in-memory persister now removes a member whose id is an object behind an id encoder and no longer adds one twice ([82fdfb7](https://github.com/haddowg/json-api-symfony/commit/82fdfb7d4b9eefea293b9e3598b361210c872607))
+* the response to a write on a pivot relationship now lists the members the relationship endpoint serves, each with its meta.pivot ([82fdfb7](https://github.com/haddowg/json-api-symfony/commit/82fdfb7d4b9eefea293b9e3598b361210c872607))
+* write a MorphTo declared with identifiedByColumns through create, update and the relationship endpoint ([c8937ea](https://github.com/haddowg/json-api-symfony/commit/c8937ea4f0833fd6ad7decc8e8272ff94e25e2d1))
+
 ## [2.24.1](https://github.com/haddowg/json-api-symfony/compare/v2.24.0...v2.24.1) (2026-11-26)
 
 
