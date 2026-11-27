@@ -29,6 +29,7 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\Filter\FilterDefaults;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
@@ -2043,17 +2044,17 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * `meta.pivot` without an N+1 of per-parent pivot reads.
      *
      * It scopes the join's parent-side `ManyToOne` to the parent SET (`WHERE
-     * pivot.<parentProperty> IN (:parents)`) and projects the parent FK, the far FK and
-     * the pivot columns as SCALARS, grouped by `(parentId, farId)` so it returns one row
+     * pivot.<parentProperty> IN (:parents)`) and projects the parent FK, the far member's
+     * own id, joined through the far FK, and the pivot columns as SCALARS, grouped by `(parentId, farId)` so it returns one row
      * per distinct (parent, far member) pair — the per-parent equivalent of the
      * single-parent query's per-far-member grouping (so duplicate membership renders one
      * representative pivot row per member, exactly as the single-parent path does). It
      * does NOT hydrate the far entity: an object result would dedup a far member shared
      * across parents under Doctrine's identity map and lose one parent's row, and the map
      * needs only ids + pivot values. Each row's pivot scalars are cast and keyed by the
-     * far member's wire id; the outer map is keyed by the parent's wire id (the SERVED
-     * `$parentType`'s encoder applied to its single id, matching the parent serializer's
-     * `getId()` — the served type is threaded in rather than reverse-resolved from the
+     * far member's wire id; the outer map is keyed by the wire id of the parent whose key
+     * the row's parent FK holds, in any case (the SERVED `$parentType`'s encoder applied
+     * to the parent's own id, matching the parent serializer's `getId()` — the served type is threaded in rather than reverse-resolved from the
      * entity class, which would pick the first-registered type's encoder and diverge for
      * a multi-type-backed entity whose served type carries a different encoder).
      *
@@ -2072,6 +2073,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         }
 
         $relatedClass = $this->entityClassFor($relatedType);
+        $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $association = $this->pivotAssociation($relation, $parents[0], $relatedClass);
 
         // Select the parent FK and the far FK as SCALARS (not the far entity object):
@@ -2085,7 +2087,10 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->getRepository($association->entityClass)
             ->createQueryBuilder('pivot')
             ->select(\sprintf('IDENTITY(pivot.%s) AS jsonapi_parent_id', $association->parentProperty))
-            ->addSelect(\sprintf('IDENTITY(pivot.%s) AS jsonapi_far_id', $association->farProperty))
+            // The far member's own key, not the pivot's copy of it, which a
+            // case-insensitive column may keep in another case.
+            ->addSelect(\sprintf('%s AS jsonapi_far_id', DoctrineIdentifiers::path($relatedMetadata, 'far')))
+            ->innerJoin($relatedClass, 'far', 'WITH', DoctrineIdentifiers::joins('pivot.' . $association->farProperty, $relatedMetadata, 'far'))
             ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parents)', $association->parentProperty))
             // One row per distinct (parent, far member) — the per-parent twin of the
             // single-parent query's per-far-member grouping (duplicate membership renders
@@ -2110,6 +2115,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         return $this->pivotMapByParent(
             $this->pivotRows($builder),
             $parentType,
+            $parents,
             $relatedType,
             $relation,
         );
@@ -2118,31 +2124,34 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     /**
      * Builds the per-parent pivot map from the batched scalar rows: each row is
      * `['jsonapi_parent_id' => parentStorageId, 'jsonapi_far_id' => farStorageId,
-     * 'pivot_<field>' => value, …]`. Both FK scalars are encoded to their wire ids (the
-     * parent by the SERVED `$parentType`'s encoder so the outer key matches the parent
-     * serializer's `getId()`; the far by the related type's encoder so the inner key
-     * matches the linkage identifier), and each declared pivot field is cast exactly as
-     * {@see pivotResult()} does.
+     * 'pivot_<field>' => value, …]`. The parent FK finds the parent of `$parents` whose key
+     * it holds, keyed by that parent's wire id (the SERVED `$parentType`'s encoder, so the
+     * outer key matches the parent serializer's `getId()`); the far id is encoded by the
+     * related type's encoder so the inner key matches the linkage identifier. Each
+     * declared pivot field is cast exactly as {@see pivotResult()} does.
      *
      * @param list<array<int|string, mixed>> $rows
+     * @param list<object>                   $parents
      *
      * @return array<string, array<string, array<string, mixed>>>
      */
     private function pivotMapByParent(
         array $rows,
         string $parentType,
+        array $parents,
         string $relatedType,
         RelationInterface $relation,
     ): array {
         $pivotFields = PivotFields::byName($relation);
         $relatedEncoder = $this->idEncoders->encoderFor($relatedType);
-        $parentEncoder = $this->idEncoders->encoderFor($parentType);
         $relatedMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($relatedType));
-        $parentMetadata = $this->entityManager->getClassMetadata($this->entityClassFor($parentType));
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        $parentWireIds = $this->parentWireIdsByKey($parents, $parentMetadata, $this->idEncoders->encoderFor($parentType));
 
         $map = [];
         foreach ($rows as $row) {
-            $parentWireId = $this->ids->wireId($parentMetadata, $row['jsonapi_parent_id'] ?? null, $parentEncoder);
+            $parentKey = $this->comparableKey($parentMetadata, $row['jsonapi_parent_id'] ?? null);
+            $parentWireId = $parentKey === null ? null : $parentWireIds[$parentKey] ?? null;
             $farWireId = $this->ids->wireId($relatedMetadata, $row['jsonapi_far_id'] ?? null, $relatedEncoder);
             if ($parentWireId === null || $farWireId === null) {
                 continue;
@@ -2579,24 +2588,55 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     private function pivotRowsByParent(array $rows, string $parentType, array $parents): array
     {
         $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
-        $encoder = $this->idEncoders->encoderFor($parentType);
+        $wireIds = $this->parentWireIdsByKey($parents, $parentMetadata, $this->idEncoders->encoderFor($parentType));
 
-        $grouped = [];
-        foreach ($parents as $parent) {
-            $wireId = $this->parentWireId($parent, $parentMetadata, $encoder);
-            if ($wireId !== null) {
-                $grouped[$wireId] = [];
-            }
-        }
-
+        $grouped = \array_fill_keys(\array_values($wireIds), []);
         foreach ($rows as $row) {
-            $wireId = $this->ids->wireId($parentMetadata, $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null, $encoder);
-            if ($wireId !== null && isset($grouped[$wireId])) {
+            $key = $this->comparableKey($parentMetadata, $row[BatchScope::PARENT_DISCRIMINATOR_ALIAS] ?? null);
+            $wireId = $key === null ? null : $wireIds[$key] ?? null;
+            if ($wireId !== null) {
                 $grouped[$wireId][] = $row;
             }
         }
 
         return $grouped;
+    }
+
+    /**
+     * Each parent's wire id, keyed by its {@see comparableKey()}, so a pivot row's parent
+     * column finds its parent whatever form the column keeps the key in.
+     *
+     * @param list<object>                                $parents
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $parentMetadata
+     *
+     * @return array<string, string>
+     */
+    private function parentWireIdsByKey(array $parents, \Doctrine\ORM\Mapping\ClassMetadata $parentMetadata, ?IdEncoderInterface $encoder): array
+    {
+        $wireIds = [];
+        foreach ($parents as $parent) {
+            $value = $this->ids->valueOf($parentMetadata, $parent);
+            $key = $this->comparableKey($parentMetadata, $value);
+            $wireId = $this->ids->wireId($parentMetadata, $value, $encoder);
+            if ($key !== null && $wireId !== null) {
+                $wireIds[$key] = $wireId;
+            }
+        }
+
+        return $wireIds;
+    }
+
+    /**
+     * The key of an id of `$metadata` in any form, with a uuid-like key in lower case, as
+     * a case-insensitive column compares it. Null when the value is no such id.
+     *
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $metadata
+     */
+    private function comparableKey(\Doctrine\ORM\Mapping\ClassMetadata $metadata, mixed $value): ?string
+    {
+        $key = $this->ids->key($metadata, $value);
+
+        return $key === null ? null : StoredIdForms::comparable($key);
     }
 
     /**

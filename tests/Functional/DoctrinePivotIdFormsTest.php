@@ -1,0 +1,287 @@
+<?php
+
+declare(strict_types=1);
+
+namespace haddowg\JsonApiBundle\Tests\Functional;
+
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifPlayer;
+use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifTeam;
+use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PivotIdFormsTestKernel;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
+use Symfony\Component\Uid\Uuid;
+
+/**
+ * Pivot meta where the two ends of a pivot keep their keys in different forms: teams
+ * are keyed by a binary UUID, players by a UUID string their own column keeps in upper
+ * case while the seat's player column holds it in lower case, and both types encode
+ * their ids. A seat must still find its team and player wherever the pivot renders.
+ * Doctrine-only: the in-memory provider stores no pivot rows.
+ */
+#[Group('spec:crud')]
+final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
+{
+    private const string RED = '01932f5e-1a2b-7c3d-8e4f-00000000000a';
+
+    private const string BLUE = '01932f5e-1a2b-7c3d-8e4f-00000000000b';
+
+    private const string ANN = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C01';
+
+    private const string BOB = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C02';
+
+    protected static function getKernelClass(): string
+    {
+        return PivotIdFormsTestKernel::class;
+    }
+
+    protected function afterBoot(): void
+    {
+        $entityManager = $this->entityManager();
+        (new SchemaTool($entityManager))->createSchema($entityManager->getMetadataFactory()->getAllMetadata());
+
+        $entityManager->persist(new PifTeam(Uuid::fromString(self::RED), 'red'));
+        $entityManager->persist(new PifTeam(Uuid::fromString(self::BLUE), 'blue'));
+        $entityManager->persist(new PifPlayer(self::ANN, 'ann'));
+        $entityManager->persist(new PifPlayer(self::BOB, 'bob'));
+        $entityManager->flush();
+        $entityManager->clear();
+
+        // The seat's player column holds the key in lower case, as a column a
+        // case-insensitive collation matches to the player's own key.
+        foreach ([[self::RED, self::ANN, 'captain'], [self::RED, self::BOB, 'keeper'], [self::BLUE, self::ANN, 'striker']] as [$team, $player, $role]) {
+            $entityManager->getConnection()->insert(
+                'pif_seat',
+                ['teamId' => Uuid::fromString($team), 'playerId' => \strtolower($player), 'role' => $role],
+                ['teamId' => 'uuid'],
+            );
+        }
+    }
+
+    #[Test]
+    public function aTeamRendersEachPlayersPivot(): void
+    {
+        $document = $this->get('/pif-teams/' . self::team(self::RED) . '?include=players');
+
+        self::assertSame([self::player(self::ANN) => 'captain', self::player(self::BOB) => 'keeper'], $this->roles($this->data($document), 'players'));
+        self::assertSame([self::player(self::ANN) => 'captain', self::player(self::BOB) => 'keeper'], $this->includedRoles($document, 'pif-players'));
+    }
+
+    #[Test]
+    public function aPlayerRendersEachTeamsPivot(): void
+    {
+        $expected = [self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'];
+
+        self::assertSame($expected, $this->roles($this->data($this->get('/pif-players/' . self::player(self::ANN))), 'teams'));
+        self::assertSame($expected, $this->roles($this->data($this->get('/pif-players/' . self::player(self::ANN) . '?include=teams')), 'teams'));
+        self::assertSame([self::team(self::RED) => 'keeper'], $this->roles($this->data($this->get('/pif-players/' . self::player(self::BOB))), 'teams'));
+    }
+
+    #[Test]
+    public function aNestedIncludeRendersEachPlayersTeamsPivot(): void
+    {
+        $document = $this->get('/pif-teams/' . self::team(self::RED) . '?include=players.teams');
+
+        $players = $this->included($document, 'pif-players');
+        self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($players[self::player(self::ANN)] ?? [], 'teams'));
+        self::assertSame([self::team(self::RED) => 'keeper'], $this->roles($players[self::player(self::BOB)] ?? [], 'teams'));
+    }
+
+    #[Test]
+    public function aNestedIncludeUnderACollectionRendersEachPlayersTeamsPivot(): void
+    {
+        $document = $this->get('/pif-teams?include=players.teams');
+
+        $players = $this->included($document, 'pif-players');
+        self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($players[self::player(self::ANN)] ?? [], 'teams'));
+        self::assertSame([self::team(self::RED) => 'keeper'], $this->roles($players[self::player(self::BOB)] ?? [], 'teams'));
+
+        $teams = $this->included($document, 'pif-teams');
+        self::assertSame([self::player(self::ANN) => 'striker'], $this->roles($teams[self::team(self::BLUE)] ?? $this->rowOf($document, self::team(self::BLUE)), 'players'));
+    }
+
+    #[Test]
+    public function aRelatedEndpointIncludeRendersEachPlayersTeamsPivot(): void
+    {
+        $document = $this->get('/pif-teams/' . self::team(self::RED) . '/players?include=teams');
+
+        $rows = $this->rows($document);
+        self::assertSame(['captain', 'keeper'], \array_map(fn(array $row): mixed => $this->pivotOf($row)['role'] ?? null, $rows));
+        self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($rows[0], 'teams'));
+        self::assertSame([self::team(self::RED) => 'keeper'], $this->roles($rows[1], 'teams'));
+    }
+
+    #[Test]
+    public function aWriteResponseRendersEachPlayersTeamsPivot(): void
+    {
+        $response = $this->handle('/pif-teams/' . self::team(self::RED) . '?include=players.teams', 'PATCH', ['data' => [
+            'type' => 'pif-teams',
+            'id' => self::team(self::RED),
+            'attributes' => ['name' => 'crimson'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        self::assertSame([self::player(self::ANN) => 'captain', self::player(self::BOB) => 'keeper'], $this->roles($this->data($document), 'players'));
+        $players = $this->included($document, 'pif-players');
+        self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($players[self::player(self::ANN)] ?? [], 'teams'));
+    }
+
+    private static function team(string $uuid): string
+    {
+        return 'team-' . $uuid;
+    }
+
+    private static function player(string $key): string
+    {
+        return 'pl-' . $key;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function get(string $path): array
+    {
+        $response = $this->handle($path);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        return $this->decode($response);
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function data(array $document): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+
+        /** @var array<string, mixed> $data */
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function rows(array $document): array
+    {
+        $rows = $document['data'] ?? null;
+        self::assertIsArray($rows);
+
+        /** @var list<array<string, mixed>> $rows */
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function rowOf(array $document, string $id): array
+    {
+        foreach ($this->rows($document) as $row) {
+            if (($row['id'] ?? null) === $id) {
+                return $row;
+            }
+        }
+
+        self::fail(\sprintf('No primary resource %s.', $id));
+    }
+
+    /**
+     * The included resources of `$type`, keyed by id.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function included(array $document, string $type): array
+    {
+        $included = $document['included'] ?? [];
+        self::assertIsArray($included);
+
+        $byId = [];
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            if (($resource['type'] ?? null) === $type && \is_string($resource['id'] ?? null)) {
+                /** @var array<string, mixed> $resource */
+                $byId[$resource['id']] = $resource;
+            }
+        }
+        \ksort($byId);
+
+        return $byId;
+    }
+
+    /**
+     * Each included resource of `$type`'s pivot role, keyed by id.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function includedRoles(array $document, string $type): array
+    {
+        return \array_map(fn(array $resource): mixed => $this->pivotOf($resource)['role'] ?? null, $this->included($document, $type));
+    }
+
+    /**
+     * The pivot role on each identifier of `$relation`'s linkage, keyed by id.
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return array<string, mixed>
+     */
+    private function roles(array $resource, string $relation): array
+    {
+        $relationships = $resource['relationships'] ?? null;
+        self::assertIsArray($relationships, 'the resource renders relationships');
+        $object = $relationships[$relation] ?? null;
+        self::assertIsArray($object);
+        $linkage = $object['data'] ?? null;
+        self::assertIsArray($linkage, \sprintf('the %s relationship renders data', $relation));
+
+        $roles = [];
+        foreach ($linkage as $identifier) {
+            self::assertIsArray($identifier);
+            self::assertIsString($identifier['id'] ?? null);
+            $meta = $identifier['meta'] ?? [];
+            self::assertIsArray($meta);
+            $pivot = $meta['pivot'] ?? [];
+            self::assertIsArray($pivot);
+            $roles[$identifier['id']] = $pivot['role'] ?? null;
+        }
+        \ksort($roles);
+
+        return $roles;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function pivotOf(array $row): array
+    {
+        $meta = $row['meta'] ?? [];
+        self::assertIsArray($meta);
+        $pivot = $meta['pivot'] ?? [];
+        self::assertIsArray($pivot);
+
+        /** @var array<string, mixed> $pivot */
+        return $pivot;
+    }
+
+    private function entityManager(): EntityManagerInterface
+    {
+        $entityManager = static::getContainer()->get('doctrine.orm.entity_manager');
+        \assert($entityManager instanceof EntityManagerInterface);
+
+        return $entityManager;
+    }
+}
