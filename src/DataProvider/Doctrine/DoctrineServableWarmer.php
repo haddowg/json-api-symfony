@@ -876,12 +876,13 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
         $relations = $paths?->relationsAlong($path) ?? [];
         foreach ($segments as $index => $segment) {
             $last = $index === \count($segments) - 1;
-            if (!$metadata->hasAssociation($segment)) {
-                $relation = $relations[$index] ?? null;
-                if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== [] && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])) {
-                    /** @var class-string $owner */
-                    $owner = $metadata->getName();
-                    $pivot = $this->pivotAssociations->discover($relation, $owner, $this->entityClassByType[$relation->relatedTypes()[0]]);
+            $relation = $relations[$index] ?? null;
+            if ($relation instanceof BelongsToMany && $relation->storedPivotFields() !== [] && isset($this->entityClassByType[$relation->relatedTypes()[0] ?? ''])) {
+                /** @var class-string $owner */
+                $owner = $metadata->getName();
+                $pivot = $this->pivotAssociations->discover($relation, $owner, $this->entityClassByType[$relation->relatedTypes()[0]]);
+                // A relation stored as the owner's collection of its rows reaches its members through them.
+                if (!$metadata->hasAssociation($segment) || ($metadata->isCollectionValuedAssociation($segment) && $metadata->getAssociationTargetClass($segment) === $pivot->entityClass)) {
                     $metadata = $this->entityManager->getClassMetadata($this->entityManager->getClassMetadata($pivot->entityClass)->getAssociationTargetClass($pivot->farProperty));
                     if ($last) {
                         return $metadata->getName();
@@ -889,7 +890,8 @@ final class DoctrineServableWarmer implements CacheWarmerInterface
 
                     continue;
                 }
-
+            }
+            if (!$metadata->hasAssociation($segment)) {
                 $foreignKey = $last ? DoctrineIdentifiers::foreignKeyAssociation($metadata, $segment) : null;
 
                 return $foreignKey === null ? null : $metadata->getAssociationTargetClass($foreignKey);

@@ -1249,19 +1249,29 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      * The association entity behind `$segment` on `$metadata` when it names a pivot
      * `belongsToMany` rather than a Doctrine association, from the declared `$relation`
      * the path walks there; null for an association, or a segment with no such relation.
+     * A relation stored as the parent's collection of its association entity's rows
+     * still reaches its members through those rows.
      *
      * @param ClassMetadata<object> $metadata
      */
     private function pivotHop(ClassMetadata $metadata, string $segment, ?RelationInterface $relation): ?PivotAssociation
     {
-        if ($metadata->hasAssociation($segment) || $this->pivotAssociation === null || !$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+        if ($this->pivotAssociation === null || !$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
             return null;
         }
 
         /** @var class-string $class */
         $class = $metadata->getName();
+        if (!$metadata->hasAssociation($segment)) {
+            return ($this->pivotAssociation)($relation, $class);
+        }
+        if (!$metadata->isCollectionValuedAssociation($segment)) {
+            return null;
+        }
 
-        return ($this->pivotAssociation)($relation, $class);
+        $pivot = ($this->pivotAssociation)($relation, $class);
+
+        return $pivot !== null && $metadata->getAssociationTargetClass($segment) === $pivot->entityClass ? $pivot : null;
     }
 
     private function where(Where $filter, QueryBuilder $query, mixed $value, string $alias): QueryBuilder

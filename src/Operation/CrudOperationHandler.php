@@ -1928,9 +1928,18 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->readRouter?->forget();
 
         // Render the linkage `GET` on the relationship endpoint serves (unpaginated), not
-        // the model's members, which still include the ones the scope hides.
+        // the model's members, which still include the ones the scope hides. A pivot
+        // relation reads its members and their pivot values off its rows, as `GET` does,
+        // since the model may hold the rows themselves.
         $this->relationshipLinkage?->set(null);
-        $members = $this->linkageGuard?->scopedMembers($server, $parent, $relation, $request, $type);
+        $relatedType = $relation->relatedTypes()[0] ?? $type;
+        $relatedProvider = $relation->isToMany() && $this->providers->supportsType($relatedType) ? $this->providers->forType($relatedType) : null;
+        $pivotResult = $relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation)
+            ? $relatedProvider->fetchRelatedPivotCollection($relatedType, $parent, $relation, new CollectionCriteria(new QueryParameters(fields: [], includes: [], sort: [], filter: [], pagination: [])), $request)
+            : null;
+        $members = $pivotResult !== null
+            ? (\is_array($pivotResult->items) ? \array_values($pivotResult->items) : \iterator_to_array($pivotResult->items, false))
+            : $this->linkageGuard?->scopedMembers($server, $parent, $relation, $request, $type);
         $this->relationshipLinkage?->setIncluded(match (true) {
             $members !== null => new WindowedRelationshipLinkage([\spl_object_id($parent) => [$relationshipName => new RelationshipLinkage($members)]]),
             !$relation->isToMany() || Polymorphism::of($relation) => $this->includeBatcher?->scopeRelationship($server, $type, $parent, $relation, $request),
@@ -1944,9 +1953,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             Mode::Remove => OperationType::RemoveRelationship,
             default => OperationType::UpdateRelationship,
         }, $relationshipName);
+        $parentSerializer = $pivotResult === null ? $server->serializerFor($type) : new PivotParentSerializer(
+            $server->serializerFor($type),
+            $relationshipName,
+            $relation,
+            $server,
+            new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone()),
+        );
         $response = $documentMeta !== null && !$documentMeta->isEmpty()
             ? MetaResponse::fromMeta([])
-            : IdentifierResponse::forRelationship($parent, $server->serializerFor($type), $relationshipName);
+            : IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
 
         // The after-relationship-mutate hook (post-commit) may replace the linkage
         // response. Deferred to post-commit under an active Atomic Operations batch

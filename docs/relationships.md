@@ -943,7 +943,8 @@ BelongsToMany::make('tracks', 'tracks')
 The `fields()` declaration drives pivot **render**, **write / validate** and **sort**.
 It renders each member's pivot values as `meta.pivot` on the related endpoint
 (`GET /playlists/1/tracks`), the relationship-linkage endpoint (`GET
-/playlists/1/relationships/tracks`), **and in a primary-resource document's
+/playlists/1/relationships/tracks`), the `200` linkage a write to that endpoint answers
+with, which lists the members the relationship endpoint then serves, **and in a primary-resource document's
 relationships block** — wherever that relation's linkage data renders, i.e. when it is
 `?include`d (`GET /playlists/1?include=tracks`) or renders data by default
 (`withData()`). It also makes `?sort=position` recognised on that related endpoint
@@ -1177,6 +1178,47 @@ BelongsToMany::make('tracks', 'tracks')
     ->fields(Integer::make('position'))
     ->through(PlaylistTrack::class); // name the association entity explicitly
 ```
+
+#### A type linked to itself
+
+An association entity can link a type to itself, such as a seat placing one owner beside
+another. Its two `ManyToOne`s both target the owner, so the target class can't say which
+one points back at the parent. Map a `OneToMany` on the owner for each side, mapped by
+that side, and store each relation as the collection of its own side:
+
+```php
+#[ORM\Entity]
+class Seat
+{
+    #[ORM\ManyToOne(targetEntity: Owner::class, inversedBy: 'seats')]
+    public ?Owner $owner = null;
+
+    #[ORM\ManyToOne(targetEntity: Owner::class, inversedBy: 'peerSeats')]
+    public ?Owner $peer = null;
+
+    #[ORM\Column]
+    public int $rank = 0;
+}
+
+// On Owner: #[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'owner')] $seats
+// and #[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'peer')] $peerSeats.
+
+BelongsToMany::make('peers', 'owners')
+    ->storedAs('seats')          // mapped by `owner`, so `owner` is the parent side
+    ->through(Seat::class)
+    ->fields(Integer::make('rank')),
+BelongsToMany::make('followers', 'owners')
+    ->storedAs('peerSeats')      // mapped by `peer`, so `peer` is the parent side
+    ->through(Seat::class)
+    ->fields(Integer::make('rank')),
+```
+
+The other `ManyToOne` to the owner is the related side. Reads, includes, counts, filters
+through the relation, `pivot.`-prefixed paths and writes all use these sides, and a write
+creates or removes only the parent's own rows. A relation that isn't stored as such a
+collection fails the cache warm-up naming both associations, and so does an entity
+holding more than one association to the related type besides the parent side, since
+nothing the relation declares tells them apart.
 
 ### Computed pivot fields
 

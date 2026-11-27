@@ -415,22 +415,24 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         }
         $incomingIds = \array_map('strval', \array_keys($incoming));
 
-        if ($mode === Mode::Remove) {
-            $remove = \array_fill_keys($incomingIds, true);
-
-            return \array_values(\array_filter(
-                $this->currentList($entity, $property),
-                fn(object $member): bool => !isset($remove[$this->idOf($member)]),
-            ));
-        }
-
+        // A remove also matches the members its ids resolve to, whose own id may be held in
+        // another form than the wire's, such as a Uuid behind an encoder.
         $resolved = [];
-        foreach ($incoming as $id => $relatedType) {
+        foreach ($mode !== Mode::Remove || $this->relatedResolver !== null ? $incoming : [] as $id => $relatedType) {
             $id = (string) $id;
             $related = $this->resolveRelated($relatedType, $id);
             if ($related !== null) {
                 $resolved[$id] = $related;
             }
+        }
+
+        if ($mode === Mode::Remove) {
+            $remove = \array_fill_keys($incomingIds, true);
+
+            return \array_values(\array_filter(
+                $this->currentList($entity, $property),
+                fn(object $member): bool => !isset($remove[$this->idOf($member)]) && !\in_array($member, $resolved, true),
+            ));
         }
 
         if ($mode === Mode::Replace) {
@@ -444,7 +446,9 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
             $next[$this->idOf($member)] = $member;
         }
         foreach ($resolved as $id => $member) {
-            $next[$id] = $member;
+            if (!\in_array($member, $next, true)) {
+                $next[$id] = $member;
+            }
         }
 
         return \array_values($next);
