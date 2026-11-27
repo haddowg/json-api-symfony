@@ -657,8 +657,16 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                         $expected = $this->decodedIds($metadata, $this->paths?->named() ?? [], [$expected])[0];
                     }
                     $placeholder = $this->placeholder($query);
+                    $ids = new DoctrineIdentifiers($query->getEntityManager());
+                    $forms = $this->keyForms($ids, $metadata, [$expected]);
+                    if (\count($forms) > 1) {
+                        $sub->andWhere(\sprintf('%s %s (:%s)', $path, $this->idOperator($filter) === '<>' ? 'NOT IN' : 'IN', $placeholder));
+                        $ids->bindList($query, $placeholder, $metadata, $forms);
+
+                        return;
+                    }
                     $sub->andWhere(\sprintf('%s %s :%s', $path, $this->idOperator($filter), $placeholder));
-                    (new DoctrineIdentifiers($query->getEntityManager()))->bind($query, $placeholder, $metadata, $expected);
+                    $ids->bind($query, $placeholder, $metadata, $expected);
                 },
                 $alias,
                 $onRelation,
@@ -704,7 +712,8 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
                         ? [DoctrineIdentifiers::path($leafMetadata, $leafAlias), $leafMetadata]
                         : ['IDENTITY(' . $leafAlias . '.' . $leafField . ')', $query->getEntityManager()->getClassMetadata($leafMetadata->getAssociationTargetClass($leafField))];
                     $sub->andWhere(\sprintf('%s IN (:%s)', $path, $placeholder));
-                    (new DoctrineIdentifiers($query->getEntityManager()))->bindList($query, $placeholder, $metadata, $onRelation ? $values : $this->decodedIds($metadata, $this->paths?->named() ?? [], $values));
+                    $ids = new DoctrineIdentifiers($query->getEntityManager());
+                    $ids->bindList($query, $placeholder, $metadata, $this->keyForms($ids, $metadata, $onRelation ? $values : $this->decodedIds($metadata, $this->paths?->named() ?? [], $values)));
                 },
                 $alias,
                 $onRelation,
@@ -1633,6 +1642,29 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
         $forms = [];
         foreach ($values as $value) {
             \array_push($forms, ...(\is_string($value) && StoredIdForms::isUuidLike($value) ? StoredIdForms::forms(null, [$value]) : [$value]));
+        }
+
+        return $forms;
+    }
+
+    /**
+     * Keys compared with the id of `$metadata`'s entity, with each uuid-like string in
+     * both cases when the id is stored as text, and every other key as it is.
+     *
+     * @param ClassMetadata<object> $metadata
+     * @param list<mixed>           $keys
+     *
+     * @return list<mixed>
+     */
+    private function keyForms(DoctrineIdentifiers $ids, ClassMetadata $metadata, array $keys): array
+    {
+        if (!$ids->storesAsText($ids->type($metadata))) {
+            return $keys;
+        }
+
+        $forms = [];
+        foreach ($keys as $key) {
+            \array_push($forms, ...(\is_string($key) && StoredIdForms::isUuidLike($key) ? StoredIdForms::forms(null, [$key]) : [$key]));
         }
 
         return $forms;

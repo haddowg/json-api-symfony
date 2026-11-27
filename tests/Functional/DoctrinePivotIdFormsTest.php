@@ -266,6 +266,40 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
         self::assertSame([$bob => 'sub'], $this->roles($this->data($this->decode($response)), 'squad'));
     }
 
+    #[Test]
+    public function aTraversalEndingOnARelationMatchesAGuidKeptInCapitalsInEitherCase(): void
+    {
+        $this->entityManager()->getConnection()->executeStatement('UPDATE pif_team SET coachId = ? WHERE id = ?', [self::COACH, Uuid::fromString(self::RED)], [\Doctrine\DBAL\ParameterType::STRING, 'uuid']);
+        $red = self::team(self::RED);
+
+        foreach ([\strtolower(self::COACH), self::COACH] as $sent) {
+            self::assertSame([$red], \array_column($this->rows($this->get('/pif-teams?filter[coachIs]=' . $sent)), 'id'), $sent);
+            self::assertSame([$red], \array_column($this->rows($this->get('/pif-teams?filter[coachIn]=' . $sent)), 'id'), $sent);
+            // Only red has a coach, and it is the one named.
+            self::assertSame([], \array_column($this->rows($this->get('/pif-teams?filter[coachNot]=' . $sent)), 'id'), $sent);
+        }
+    }
+
+    #[Test]
+    public function aPivotRowFilterMatchesAUuidValueInEitherCase(): void
+    {
+        $value = 'B0B0B0B0-E5F6-4A7B-8C9D-0E1F2A3B4C99';
+        $this->entityManager()->getConnection()->executeStatement('UPDATE pif_seat SET role = ? WHERE role = ?', [$value, 'keeper']);
+        $players = fn(string $query): array => \array_column($this->rows($this->get('/pif-teams/' . self::team(self::RED) . '/players?' . $query)), 'id');
+        [$ann, $bob] = [self::player(self::ANN), self::player(self::BOB)];
+
+        foreach ([\strtolower($value), $value] as $sent) {
+            self::assertSame([$bob], $players('filter[roleIs]=' . $sent), $sent);
+            self::assertSame([$bob], $players('filter[roleIn]=' . $sent), $sent);
+            self::assertSame([$bob], $players('filter[seatRole]=' . $sent), $sent);
+            self::assertSame([$ann], $players('filter[roleNot]=' . $sent), $sent);
+            self::assertSame([$ann], $players('filter[roleNotIn]=' . $sent), $sent);
+        }
+        // A value that is no uuid still compares exactly.
+        self::assertSame([], $players('filter[roleIs]=CAPTAIN'));
+        self::assertSame([$ann], $players('filter[roleIs]=captain'));
+    }
+
     /**
      * @param array<string, mixed> $resource
      */

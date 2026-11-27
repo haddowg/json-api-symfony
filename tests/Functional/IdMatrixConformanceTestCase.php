@@ -282,13 +282,14 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
                 self::assertSame(['5'], $this->sortedIds('/im-notes?filter[guidOwner]=' . $sent), $sent);
             }
             self::assertSame(['5'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerIs]=' . $sent), $sent);
-            self::assertNotContains('5', $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNot]=' . $sent), $sent);
-            self::assertNotContains('5', $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNotIn]=' . $sent), $sent);
+            // Note 4 holds no key, so a negated filter leaves it out too.
+            self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNot]=' . $sent), $sent);
+            self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNotIn]=' . $sent), $sent);
         }
-        self::assertContains('5', $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNotIn]=' . IdMatrixSeed::wireId('guid', 1)));
+        self::assertSame($kind === 'guid' ? ['1', '2', '5'] : ['1', '2', '3', '5'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNotIn]=' . IdMatrixSeed::wireId('guid', 1)));
 
         // An ordered operator still compares exactly, and capitals sort first.
-        self::assertNotContains('5', $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerFrom]=' . $wire));
+        self::assertSame($kind === 'guid' ? [] : ['1', '2', '3'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerFrom]=' . $wire));
     }
 
     #[Test]
@@ -299,7 +300,7 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
 
         foreach ([$wire, self::CAPITAL_GUID] as $sent) {
             self::assertSame([$wire], $this->sortedIds('/im-guid-owners?filter[id]=' . $sent), $sent);
-            self::assertNotContains($wire, $this->sortedIds('/im-guid-owners?filter[notId]=' . $sent), $sent);
+            self::assertSame($this->sorted([IdMatrixSeed::wireId('guid', 0), IdMatrixSeed::wireId('guid', 1), IdMatrixSeed::wireId('guid', 2)]), $this->sortedIds('/im-guid-owners?filter[notId]=' . $sent), $sent);
         }
     }
 
@@ -313,11 +314,8 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[guidOwner]=' . $upper . ',' . IdMatrixSeed::wireId('guid', 1)));
         // A uuid column reads either case as the same uuid.
         self::assertSame(['1', '2'], $this->sortedIds('/im-notes?filter[uuidOwner]=' . \strtoupper(IdMatrixSeed::wireId('uuid', 0))));
-        $others = $this->sortedIds('/im-notes?filter[guidOwnerNot]=' . $upper);
-        self::assertContains('3', $others);
-        self::assertNotContains('1', $others);
-        self::assertNotContains('2', $others);
-        self::assertSame(['3'], \array_values(\array_intersect(['1', '2', '3'], $this->sortedIds('/im-notes?filter[guidOwnerNotIn]=' . $upper))));
+        self::assertSame(['3'], $this->sortedIds('/im-notes?filter[guidOwnerNot]=' . $upper));
+        self::assertSame(['3'], $this->sortedIds('/im-notes?filter[guidOwnerNotIn]=' . $upper));
 
         // The related endpoint and a relatedQuery filter run through the same handler.
         $owner = IdMatrixSeed::wireId('guid', 0);
@@ -333,7 +331,7 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['1', '2'], $this->sortedIds('/im-notes?filter[strOwnerIs]=alpha'));
         self::assertSame([], $this->sortedIds('/im-notes?filter[strOwnerIs]=ALPHA'));
         self::assertSame([], $this->sortedIds('/im-notes?filter[strOwner]=ALPHA'));
-        self::assertContains('1', $this->sortedIds('/im-notes?filter[strOwnerNot]=ALPHA'));
+        self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[strOwnerNot]=ALPHA'));
     }
 
     #[Test]
