@@ -6,15 +6,18 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App\ComputedPivot;
 
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsTo;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
+use haddowg\JsonApi\Resource\Field\PivotEdge;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
 /**
  * A fleet's `vessels` holds ships and crews by stored pairs, and its `units` holds its
- * ships and its flagship's crew, read off the fleet.
+ * ships and its flagship's crew, read off the fleet. Its `hands` is a pivot relation
+ * declared `notSparseField()`, with a computed `rank`.
  */
 #[AsJsonApiResource(readOnly: true)]
 class CpFleetResource extends AbstractResource
@@ -28,6 +31,11 @@ class CpFleetResource extends AbstractResource
             Str::make('name'),
             HasMany::make('ships', 'cp-ships'),
             BelongsTo::make('flagship', 'cp-ships'),
+            BelongsToMany::make('hands', 'cp-members')->notSparseField()->fields(
+                Str::make('rank')->computedUsing(static fn(mixed $edge): string => $edge instanceof PivotEdge && $edge->parent instanceof CpFleet && $edge->related instanceof CpMember
+                    ? $edge->parent->name . ':' . $edge->related->name
+                    : ''),
+            ),
             MorphToMany::make('vessels', ['cp-ships', 'cp-crews'])
                 ->identifiedBy(static fn(mixed $fleet): array => $fleet instanceof CpFleet ? $fleet->vessels : []),
             MorphToMany::make('units', ['cp-ships', 'cp-crews'])

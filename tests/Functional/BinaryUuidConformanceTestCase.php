@@ -9,6 +9,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidBookEntity;
+use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidCreditEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidLabelEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidNoteEntity;
 use haddowg\JsonApiBundle\Tests\Functional\App\BinaryUuid\UuidShelfEntity;
@@ -49,6 +50,12 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
         $this->book('beta', 'Beta', $fiction, [$new]);
         $this->book('gamma', 'Gamma', null, []);
 
+        foreach ([['alpha', $classic, 3], ['alpha', $new, 7], ['beta', $new, 5]] as [$book, $label, $weight]) {
+            $credited = $this->seeded[$book];
+            \assert($credited instanceof UuidBookEntity);
+            $entityManager->persist(new UuidCreditEntity($credited, $label, $weight));
+        }
+
         $entityManager->flush();
         foreach (['fiction', 'empty', 'classic', 'new', 'hidden', 'alpha', 'beta', 'gamma'] as $name) {
             $entity = $this->seeded[$name];
@@ -71,6 +78,43 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertIsString($stored);
         self::assertSame(16, \strlen($stored), 'sqlite holds the id as 16 bytes');
         self::assertSame($this->ids['alpha'], Uuid::fromBinary($stored)->toRfc4122());
+    }
+
+    #[Test]
+    public function anActionResponseRendersThePivotKeyedByTheWireId(): void
+    {
+        $expected = [$this->ids['classic'] => ['weight' => 3], $this->ids['new'] => ['weight' => 7]];
+        \ksort($expected);
+
+        $read = $this->decode($this->get('/books/' . $this->ids['alpha'] . '?include=credited'));
+        $action = $this->action('/books/' . $this->ids['alpha'] . '/-actions/show?include=credited');
+
+        foreach ([$read, $action] as $document) {
+            self::assertSame($expected, $this->linkagePivots($this->primary($document), 'credited'));
+            self::assertSame($expected, $this->includedPivots($document));
+        }
+    }
+
+    #[Test]
+    public function anActionResponseRendersANestedPivotForEveryParent(): void
+    {
+        $document = $this->action('/shelves/' . $this->ids['fiction'] . '/-actions/show?include=books.credited');
+
+        $alpha = [$this->ids['classic'] => ['weight' => 3], $this->ids['new'] => ['weight' => 7]];
+        \ksort($alpha);
+        self::assertSame($alpha, $this->linkagePivots($this->includedResource($document, 'books', $this->ids['alpha']), 'credited'));
+        self::assertSame([$this->ids['new'] => ['weight' => 5]], $this->linkagePivots($this->includedResource($document, 'books', $this->ids['beta']), 'credited'));
+    }
+
+    #[Test]
+    public function aCollectionActionResponseRendersEachBooksPivot(): void
+    {
+        $rows = $this->rows($this->action('/books/-actions/list?include=credited'));
+
+        self::assertSame([$this->ids['alpha'], $this->ids['beta'], $this->ids['gamma']], \array_column($rows, 'id'));
+        self::assertCount(2, $this->linkagePivots($rows[0], 'credited'));
+        self::assertSame([$this->ids['new'] => ['weight' => 5]], $this->linkagePivots($rows[1], 'credited'));
+        self::assertSame([], $this->linkagePivots($rows[2], 'credited'));
     }
 
     #[Test]
@@ -423,6 +467,108 @@ abstract class BinaryUuidConformanceTestCase extends JsonApiFunctionalTestCase
         }
         $this->entityManager()->persist($book);
         $this->seeded[$key] = $book;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function action(string $uri): array
+    {
+        $response = $this->handle($uri, 'POST');
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+
+        return $this->decode($response);
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function primary(array $document): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        /** @var array<string, mixed> $data */
+
+        return $data;
+    }
+
+    /**
+     * Each linkage member's `meta.pivot` on `$resource`'s `$relation`, keyed by id in id order.
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return array<string, mixed>
+     */
+    private function linkagePivots(array $resource, string $relation): array
+    {
+        $relationships = $resource['relationships'] ?? null;
+        self::assertIsArray($relationships, (string) \json_encode($resource));
+        $relationship = $relationships[$relation] ?? null;
+        self::assertIsArray($relationship);
+        $data = $relationship['data'] ?? null;
+        self::assertIsArray($data, (string) \json_encode($relationship));
+
+        $pivots = [];
+        foreach ($data as $member) {
+            self::assertIsArray($member);
+            self::assertIsString($member['id'] ?? null);
+            $meta = $member['meta'] ?? null;
+            self::assertIsArray($meta, (string) \json_encode($member));
+            $pivots[$member['id']] = $meta['pivot'] ?? null;
+        }
+        \ksort($pivots);
+
+        return $pivots;
+    }
+
+    /**
+     * Each included label's `meta.pivot`, keyed by id in id order.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function includedPivots(array $document): array
+    {
+        $included = $document['included'] ?? null;
+        self::assertIsArray($included);
+
+        $pivots = [];
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            if (($resource['type'] ?? null) !== 'labels') {
+                continue;
+            }
+            self::assertIsString($resource['id'] ?? null);
+            $meta = $resource['meta'] ?? null;
+            self::assertIsArray($meta, (string) \json_encode($resource));
+            $pivots[$resource['id']] = $meta['pivot'] ?? null;
+        }
+        \ksort($pivots);
+
+        return $pivots;
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function includedResource(array $document, string $type, string $id): array
+    {
+        $included = $document['included'] ?? null;
+        self::assertIsArray($included);
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            if (($resource['type'] ?? null) === $type && ($resource['id'] ?? null) === $id) {
+                /** @var array<string, mixed> $resource */
+                return $resource;
+            }
+        }
+
+        self::fail(\sprintf('%s %s is not included', $type, $id));
     }
 
     private function entityManager(): EntityManagerInterface

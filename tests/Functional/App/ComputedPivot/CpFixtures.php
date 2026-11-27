@@ -13,8 +13,8 @@ use haddowg\JsonApiBundle\DataProvider\InMemorySnapshotCoordinator;
  * The seeded graph both kernels serve: three members, crew 1 ("Reds") with Ada and Linus,
  * crew 2 ("Blues") with Ada and Grace, and on Doctrine Ada's and Grace's shifts on crew 1's
  * staff and Linus's on crew 2's. Ships 1 and 3 sail with the Reds, ship 2 with the Blues,
- * and fleet 1 holds ships 1 and 2 with ship 3 as its flagship, and names ship 2 and crew 1
- * as its vessels. Linus serves on ship 1, Ada and Grace on ship 2.
+ * and fleet 1 holds ships 1 and 2 with ship 3 as its flagship, names ship 2 and crew 1
+ * as its vessels, and has Grace as its one hand. Linus serves on ship 1, Ada and Grace on ship 2.
  */
 final class CpFixtures
 {
@@ -51,6 +51,7 @@ final class CpFixtures
         $home->ships = new ArrayCollection([$ark, $bark]);
         $home->flagship = $cog;
         $home->vessels = [['cp-ships', '2'], ['cp-crews', '1']];
+        $home->hands = new ArrayCollection([$grace]);
 
         return [
             'members' => ['1' => $ada, '2' => $grace, '3' => $linus],
@@ -159,6 +160,7 @@ final class CpFixtures
         $fleets = [];
         foreach ($graph['fleets'] as $id => $fleet) {
             $fleet->ships = [...$fleet->ships];
+            $fleet->hands = [...$fleet->hands];
             $fleets[$id] = $fleet;
         }
 

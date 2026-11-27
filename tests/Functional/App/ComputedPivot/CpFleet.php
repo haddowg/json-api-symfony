@@ -10,7 +10,7 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * A fleet has many ships and a flagship, so a crew's pivot relations are reached two
  * includes deep, and one crew can be reached by two include paths in one document. Its
- * vessels are ships and crews, named by stored pairs.
+ * vessels are ships and crews, named by stored pairs. Its hands are a plain join table.
  */
 #[ORM\Entity]
 #[ORM\Table(name: 'cp_fleet')]
@@ -26,6 +26,13 @@ class CpFleet
     #[ORM\ManyToOne(targetEntity: CpShip::class)]
     #[ORM\JoinColumn(nullable: true)]
     public ?CpShip $flagship = null;
+
+    /**
+     * @var iterable<CpMember>
+     */
+    #[ORM\ManyToMany(targetEntity: CpMember::class)]
+    #[ORM\JoinTable(name: 'cp_fleet_member')]
+    public iterable $hands;
 
     /**
      * The `[type, id]` pairs of the ships and crews the fleet names as its vessels.
@@ -44,5 +51,6 @@ class CpFleet
         public string $name = '',
     ) {
         $this->ships = new ArrayCollection();
+        $this->hands = new ArrayCollection();
     }
 }

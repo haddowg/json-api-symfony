@@ -87,6 +87,9 @@ class CpDoctrineTestKernel extends Kernel
         $services = $container->services();
         $services->defaults()->autowire()->autoconfigure();
         $services->set(CommendMember::class);
+        foreach ([MusterCrew::class, QueueCrew::class, MusterShip::class, RollShips::class, MixShipsAndCrews::class, MusterFleet::class] as $action) {
+            $services->set($action);
+        }
 
         $this->configureData($container, $services);
     }

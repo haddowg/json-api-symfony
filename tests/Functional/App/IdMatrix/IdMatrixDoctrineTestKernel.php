@@ -134,6 +134,7 @@ class IdMatrixDoctrineTestKernel extends Kernel
         $dbal['types'] = [CodeType::NAME => CodeType::class];
         $container->extension('doctrine', ['dbal' => $dbal, 'orm' => $orm]);
         $services->set(ImHiddenRowsExtension::class);
+        $services->set(ShowGuidOwner::class);
         // The executed statements, so a test can tell a windowed read from one per parent.
         $services->set(QueryCountingLogger::class)->public();
         $services->set(DbalLoggingMiddleware::class)
