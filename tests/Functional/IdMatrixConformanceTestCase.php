@@ -197,6 +197,35 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aMorphToIdentifiedByColumnsIsWrittenThroughEveryWrite(): void
+    {
+        $guid = ['type' => 'im-guid-owners', 'id' => IdMatrixSeed::wireId('guid', 1)];
+        $uuid = ['type' => 'im-uuid-owners', 'id' => IdMatrixSeed::wireId('uuid', 2)];
+        $prefix = ['type' => 'im-prefix-owners', 'id' => IdMatrixSeed::wireId('prefix', 1)];
+        $ref = fn(string $path): mixed => $this->relationship($this->fetch($path)['data'] ?? null, 'ref')['data'] ?? null;
+
+        $updated = $this->handle('/im-notes/4', 'PATCH', ['data' => ['type' => 'im-notes', 'id' => '4', 'relationships' => ['ref' => ['data' => $guid]]]]);
+        self::assertSame(200, $updated->getStatusCode(), (string) $updated->getContent());
+        self::assertSame($guid, $this->relationship($this->decode($updated)['data'] ?? null, 'ref')['data'] ?? null);
+        self::assertSame($guid, $ref('/im-notes/4'));
+        self::assertSame(['im-guid-owners:' . $guid['id']], $this->includedKeys($this->fetch('/im-notes/4?include=ref')));
+
+        $created = $this->handle('/im-notes', 'POST', ['data' => ['type' => 'im-notes', 'id' => '7', 'attributes' => ['title' => 'Seven'], 'relationships' => ['ref' => ['data' => $uuid]]]]);
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+        self::assertSame($uuid, $ref('/im-notes/7'));
+        self::assertSame(['7'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-uuid-owners&filter[ref][id]=' . $uuid['id'])['data'] ?? null));
+
+        $relinked = $this->handle('/im-notes/4/relationships/ref', 'PATCH', ['data' => $prefix]);
+        self::assertContains($relinked->getStatusCode(), [200, 204], (string) $relinked->getContent());
+        self::assertSame($prefix, $ref('/im-notes/4'));
+        self::assertContains('4', $this->ids($this->fetch($this->owner('prefix', 1) . '/refNotes')['data'] ?? null));
+
+        $cleared = $this->handle('/im-notes/4/relationships/ref', 'PATCH', ['data' => null]);
+        self::assertContains($cleared->getStatusCode(), [200, 204], (string) $cleared->getContent());
+        self::assertNull($ref('/im-notes/4'));
+    }
+
+    #[Test]
     public function aMorphManyMatchesAStoredIdInEitherForm(): void
     {
         $owner = $this->owner('prefix', 0);

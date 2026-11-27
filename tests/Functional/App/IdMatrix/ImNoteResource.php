@@ -19,7 +19,7 @@ abstract class ImNoteResource extends AbstractResource
 
     public function fields(): array
     {
-        $fields = [Id::make()->numeric(), Str::make('title')];
+        $fields = [Id::make()->numeric()->allowClientId(), Str::make('title')];
         foreach (self::FOREIGN_KEYS as $kind) {
             $fields[] = Str::make($kind . 'OwnerId')->hidden()->readOnly();
         }

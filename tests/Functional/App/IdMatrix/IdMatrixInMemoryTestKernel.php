@@ -76,7 +76,7 @@ final class IdMatrixInMemoryTestKernel extends IdMatrixDoctrineTestKernel
         return new InMemoryDataPersister(
             $type,
             self::provider($type)->store(),
-            static fn(): object => throw new \LogicException('No ' . $type . ' is created here.'),
+            static fn(): object => $type === 'im-notes' ? new ImNote(0) : throw new \LogicException('No ' . $type . ' is created here.'),
             static fn(string $relatedType, string $id): ?object => isset(self::TYPES[$relatedType]) ? self::provider($relatedType)->fetchOne($relatedType, $id) : null,
         );
     }

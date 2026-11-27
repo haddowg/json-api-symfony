@@ -24,6 +24,8 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\FieldInterface;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphColumns;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Positions;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -401,7 +403,10 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             return $entity;
         }
 
-        if ($linkage instanceof ToOneRelationship) {
+        $columns = $relation instanceof MorphTo ? $relation->identifierColumns() : null;
+        if ($linkage instanceof ToOneRelationship && $columns !== null) {
+            $this->writeMorphColumns($entity, $relation, $columns, $linkage->resourceIdentifier);
+        } elseif ($linkage instanceof ToOneRelationship) {
             $identifier = $linkage->resourceIdentifier;
             $this->property($entity, $property)->setValue($entity, $identifier?->id !== null
                 ? $this->reference($relation, $identifier)
@@ -420,6 +425,30 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
         }
 
         return $entity;
+    }
+
+    /**
+     * Points a MorphTo declared with `identifiedByColumns()` at `$identifier`, or at
+     * nothing: its type field takes the type's stored value and its id field the target's
+     * key as the target's row keeps it, in the id field's own type.
+     */
+    private function writeMorphColumns(object $entity, RelationInterface $relation, MorphColumns $columns, ?ResourceIdentifier $identifier): void
+    {
+        $metadata = $this->entityManager->getClassMetadata($entity::class);
+        if ($identifier?->id === null) {
+            $metadata->setFieldValue($entity, $columns->type, null);
+            $metadata->setFieldValue($entity, $columns->id, null);
+
+            return;
+        }
+
+        $type = $this->relatedTypeOf($relation, $identifier);
+        $class = $this->entityClassFor($type);
+        $target = $this->referenceTo($class, $this->decodeLinkageId($type, (string) $identifier->id));
+        $key = $target === null ? null : $this->ids->valueOf($this->entityManager->getClassMetadata($class), $target);
+
+        $metadata->setFieldValue($entity, $columns->type, $columns->storedValueFor($type));
+        $metadata->setFieldValue($entity, $columns->id, $key === null ? null : $this->ids->fieldToPhp($metadata, $columns->id, $key));
     }
 
     /**
