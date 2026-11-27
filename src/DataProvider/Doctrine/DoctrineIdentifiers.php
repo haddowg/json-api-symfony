@@ -468,15 +468,14 @@ final class DoctrineIdentifiers
      */
     public function storesAsText(?Type $type): bool
     {
-        if ($type instanceof StringType || $type instanceof TextType) {
-            return true;
-        }
-        if (!$type instanceof GuidType) {
-            return false;
-        }
-        $platform = $this->entityManager->getConnection()->getDatabasePlatform();
+        // A guid is a string type, but a native uuid column has no LOWER().
+        if ($type instanceof GuidType) {
+            $platform = $this->entityManager->getConnection()->getDatabasePlatform();
 
-        return $platform->getGuidTypeDeclarationSQL([]) === $platform->getStringTypeDeclarationSQL(['fixed' => true, 'length' => 36]);
+            return $platform->getGuidTypeDeclarationSQL([]) === $platform->getStringTypeDeclarationSQL(['fixed' => true, 'length' => 36]);
+        }
+
+        return $type instanceof StringType || $type instanceof TextType;
     }
 
     /**

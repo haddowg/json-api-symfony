@@ -99,10 +99,13 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
         $statements = $this->statementsOf('/im-guid-owners?include=notes');
         $notes = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'from im_note') && \str_contains($sql, 'guidownerid in')));
 
+        $rows = $this->decode($this->handle('/im-guid-owners?include=notes'))['data'] ?? null;
+        self::assertIsArray($rows);
         $owners = [];
-        foreach ($this->decode($this->handle('/im-guid-owners?include=notes'))['data'] ?? [] as $owner) {
+        foreach ($rows as $owner) {
             self::assertIsArray($owner);
-            $owners[$owner['id'] ?? ''] = $owner;
+            self::assertIsString($owner['id'] ?? null);
+            $owners[$owner['id']] = $owner;
         }
         $data = $this->relationshipData($owners[\strtolower(self::CAPITAL_GUID)] ?? null, 'notes');
         self::assertIsArray($data);
