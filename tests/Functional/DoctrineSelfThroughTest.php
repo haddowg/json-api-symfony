@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\SelfThrough\StDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\SelfThrough\StFixtures;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -114,6 +115,45 @@ final class DoctrineSelfThroughTest extends SelfThroughConformanceTestCase
         $response = $this->handle(\sprintf('/%s/%s/relationships/peers', $type, $this->id($type, 2)), 'DELETE', ['data' => [$this->identifier($type, 3)]]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
         self::assertSame([], $this->decode($response)['data'] ?? null);
+    }
+
+    #[Test]
+    #[DataProvider('types')]
+    public function aRelationThroughTheSeatsWithNoPivotFieldReadsTheSeats(string $type): void
+    {
+        self::assertSame([2], $this->linkage($type, 1, 'mates'));
+        self::assertSame([3], $this->numbers($this->data($this->get(\sprintf('/%s/%s/mates', $type, $this->id($type, 2))))));
+        self::assertSame([], $this->linkage($type, 3, 'mates'));
+
+        $mates = [];
+        foreach ($this->data($this->get(\sprintf('/%s?include=mates&withCount=mates', $type), 'application/vnd.api+json;profile="' . CountableProfile::URI . '"')) as $owner) {
+            $relationships = $owner['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            $mates[StFixtures::number($owner['id'] ?? '')] = [$this->numbers($this->relationship($owner, 'mates')), $this->total($relationships['mates'] ?? null)];
+        }
+        \ksort($mates);
+        self::assertSame([1 => [[2], 1], 2 => [[3], 1], 3 => [[], 0]], $mates);
+
+        self::assertSame([1], $this->numbers($this->data($this->get(\sprintf('/%s?filter[mateName]=Owner 2', $type)))));
+    }
+
+    #[Test]
+    #[DataProvider('types')]
+    public function aWriteThroughTheSeatsWithNoPivotFieldWritesTheParentsSeats(string $type): void
+    {
+        $path = \sprintf('/%s/%s/relationships/mates', $type, $this->id($type, 3));
+        $response = $this->handle($path, 'POST', ['data' => [$this->identifier($type, 1)]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([StFixtures::renderedId($type, 1)], \array_column($this->data($this->decode($response)), 'id'));
+        self::assertSame([[1, 2, 1], [2, 3, 2], [3, 1, 0]], $this->seats($type));
+
+        $response = $this->handle(\sprintf('/%s/%s/relationships/mates', $type, $this->id($type, 1)), 'PATCH', ['data' => [$this->identifier($type, 3)]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([[2, 3, 2], [3, 1, 0], [1, 3, 0]], $this->seats($type));
+
+        $response = $this->handle(\sprintf('/%s/%s/relationships/mates', $type, $this->id($type, 2)), 'DELETE', ['data' => [$this->identifier($type, 3)]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([[3, 1, 0], [1, 3, 0]], $this->seats($type));
     }
 
     #[Test]

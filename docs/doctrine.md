@@ -1514,8 +1514,9 @@ the `pivot.` convention are covered on
 **Stored pivot data only exists over an association entity.** A plain `#[ORM\ManyToMany]`
 join table holds only the two foreign keys; Doctrine cannot map a `position` column
 on it. A relation whose pivot fields are all
-[computed](relationships.md#computed-pivot-fields) reads that plain join table and runs
-no pivot query. So a pivot relation must be backed by an **association entity** — `Playlist
+[computed](relationships.md#computed-pivot-fields), or that declares none, reads that plain
+join table and runs no pivot query, unless it names an association entity with
+`->through()`: then it reads and writes that entity's rows, with or without pivot fields. So a pivot relation must be backed by an **association entity** — `Playlist
 -> OneToMany -> PlaylistTrack(position, addedAt) -> ManyToOne -> Track`. The provider
 **auto-detects** that entity from your metadata (`PivotAssociationResolver`: the one
 to-many on the parent whose target also has a `ManyToOne` to the far type), or

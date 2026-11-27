@@ -39,6 +39,10 @@ abstract class StOwnerResource extends AbstractResource
             Str::make('name'),
             $this->members('peers', 'seats'),
             $this->members('followers', 'peerSeats')->withData(),
+            ...(static::SEAT === null ? [] : [
+                // The same seats with no pivot field: the through class alone makes them its rows.
+                BelongsToMany::make('mates', static::$type)->through(static::SEAT, parent: 'owner', related: 'peer')->countable(),
+            ]),
         ];
     }
 
@@ -47,6 +51,7 @@ abstract class StOwnerResource extends AbstractResource
         return [
             Where::make('peerName', 'name')->through('peers'),
             Where::make('followerName', 'name')->through('followers'),
+            ...(static::SEAT === null ? [] : [Where::make('mateName', 'name')->through('mates')]),
         ];
     }
 

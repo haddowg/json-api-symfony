@@ -1217,6 +1217,11 @@ entity, mapped by its own side: `->storedAs('seats')` on an owner whose
 `#[ORM\OneToMany(targetEntity: Seat::class, mappedBy: 'owner')] $seats` points at the
 `owner` association, which becomes the parent side.
 
+A relation that declares `through()` reads its members through that entity's rows even
+when it declares no pivot field, as `mates` would with `->through(Seat::class, parent:
+'owner', related: 'peer')` and nothing else, and a write creates and removes those rows.
+Only a relation with a stored pivot field takes `pivot.`-prefixed filters and paths.
+
 Reads, includes, counts, filters through the relation, `pivot.`-prefixed paths and writes
 all use these sides, and a write creates or removes only the parent's own rows. Any
 association entity whose sides are still ambiguous fails the cache warm-up, naming the

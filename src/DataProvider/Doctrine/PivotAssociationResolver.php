@@ -58,7 +58,17 @@ final class PivotAssociationResolver
      */
     public function isPivotRelation(RelationInterface $relation): bool
     {
-        return $relation instanceof BelongsToMany && $relation->storedPivotFields() !== [];
+        return self::readsRows($relation);
+    }
+
+    /**
+     * Whether `$relation` reads its members through the rows of an association entity: a
+     * {@see BelongsToMany} declaring a stored pivot field, or naming the entity with
+     * `through()`, as core's relation paths count it.
+     */
+    public static function readsRows(RelationInterface $relation): bool
+    {
+        return $relation instanceof BelongsToMany && ($relation->storedPivotFields() !== [] || $relation->pivotThrough() !== null);
     }
 
     /**

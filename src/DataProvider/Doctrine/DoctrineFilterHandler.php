@@ -1256,7 +1256,7 @@ final class DoctrineFilterHandler implements FilterHandlerInterface, AliasAwareF
      */
     private function pivotHop(ClassMetadata $metadata, string $segment, ?RelationInterface $relation): ?PivotAssociation
     {
-        if ($this->pivotAssociation === null || !$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+        if ($this->pivotAssociation === null || !$relation instanceof BelongsToMany || !PivotAssociationResolver::readsRows($relation)) {
             return null;
         }
 

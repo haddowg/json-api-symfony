@@ -277,7 +277,7 @@ abstract class SelfThroughConformanceTestCase extends JsonApiFunctionalTestCase
         return $numbers;
     }
 
-    private function total(mixed $relationship): mixed
+    protected function total(mixed $relationship): mixed
     {
         self::assertIsArray($relationship);
         $meta = $relationship['meta'] ?? null;

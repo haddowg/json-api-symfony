@@ -168,6 +168,20 @@ final class SelfReferencingPivotAssociationTest extends KernelTestCase
     }
 
     #[Test]
+    public function aThroughClassWithNoPivotFieldStillReadsItsRows(): void
+    {
+        $resolver = $this->resolver();
+        $named = BelongsToMany::make('mates', 'st-owners')->through(StSeat::class, parent: 'owner', related: 'peer')->build();
+
+        self::assertTrue($resolver->isPivotRelation($named));
+        self::assertSame(['owner', 'peer'], [$resolver->discover($named, StOwner::class, StOwner::class)->parentProperty, $resolver->discover($named, StOwner::class, StOwner::class)->farProperty]);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('The pivot relation "mates" reads ' . StSeat::class . ', which holds several ManyToOne associations that could be its parent side');
+        $resolver->discover(BelongsToMany::make('mates', 'st-owners')->through(StSeat::class)->build(), StOwner::class, StOwner::class);
+    }
+
+    #[Test]
     public function anAmbiguousRelationFailsTheWarmUp(): void
     {
         $this->expectException(\LogicException::class);
