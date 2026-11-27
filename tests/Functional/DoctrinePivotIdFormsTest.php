@@ -22,7 +22,7 @@ use Symfony\Component\Uid\Uuid;
  * case while the seat's player column holds it in lower case, and both types encode
  * their ids. A seat must still find its team and player wherever the pivot renders.
  * A coach keyed by a guid kept in capitals is addressed in either case, rendered in
- * lower case, and linked by its stored key. Doctrine-only: the in-memory provider stores no pivot rows.
+ * lower case, and linked by its stored key. Doctrine-only: the in-memory provider has no database key forms.
  */
 #[Group('spec:crud')]
 final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase

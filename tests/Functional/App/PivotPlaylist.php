@@ -6,9 +6,9 @@ namespace haddowg\JsonApiBundle\Tests\Functional\App;
 
 /**
  * The in-memory parent `playlists` POJO for the pivot boundary witness: it holds
- * its `tracks` directly (no association entity — in-memory cannot model pivot
- * columns), so the `tracks` related collection reads straight off this object and a
- * pivot `?filter`/`?sort` key stays unrecognised (400).
+ * its `tracks` directly, with their pivot rows kept beside it in the store, so the
+ * `tracks` related collection reads straight off this object and a pivot
+ * `?filter`/`?sort` key stays unrecognised (400).
  */
 final class PivotPlaylist
 {

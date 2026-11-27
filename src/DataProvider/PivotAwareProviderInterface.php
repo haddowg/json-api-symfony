@@ -8,20 +8,22 @@ use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 
 /**
- * The pivot extension of {@see DataProviderInterface}: a provider that can fetch a
- * `belongsToMany` related collection over a Doctrine **association entity** (a join
- * modelled to carry pivot columns), returning both the page of far entities AND the
- * per-member pivot values.
+ * The pivot extension of {@see DataProviderInterface}: a provider that reads the stored
+ * pivot values of a `belongsToMany`, and may also query them.
  *
- * Only the reference {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider}
- * implements it: a plain `#[ORM\ManyToMany]` join table cannot hold a pivot column,
- * so pivot data exists only when the join is an association entity, which only the
- * Doctrine adapter can query. The in-memory provider does NOT implement this
- * interface — a pivot relation's filter/sort keys are unrecognised there (`400`)
- * and no pivot meta renders (the documented in-memory boundary). The handler checks
- * `instanceof` and only takes the pivot path when both the provider supports it and
- * the relation is pivot-backed; otherwise the existing
- * {@see DataProviderInterface::fetchRelatedCollection()} path runs unchanged.
+ * Every implementer reads pivot rows through {@see fetchRelatedPivotMap()} and
+ * {@see fetchRelatedPivotMapBatch()}, which every response rendering a pivot relation's
+ * linkage asks the related type's provider for, so each member carries its `meta.pivot`.
+ * A relation with stored pivot fields whose related type's provider doesn't implement
+ * this interface fails the cache warm-up.
+ *
+ * {@see supportsPivot()} says whether the provider also queries those rows: the reference
+ * {@see \haddowg\JsonApiBundle\DataProvider\Doctrine\DoctrineDataProvider} fetches a
+ * related page over the association entity with {@see fetchRelatedPivotCollection()}, its
+ * pivot fields filter and sort keys. The in-memory provider keeps its rows beside each
+ * parent and answers false, so its related reads take the plain
+ * {@see DataProviderInterface::fetchRelatedCollection()} path and a pivot filter or sort
+ * key is unrecognised (`400`).
  *
  * @template-covariant TEntity of object
  */
@@ -29,10 +31,11 @@ interface PivotAwareProviderInterface
 {
     /**
      * Whether `$relation` reached from a parent of `$relatedType` is a pivot-backed
-     * relation this provider can fetch over an association entity — a
+     * relation this provider can query over its pivot rows — a
      * {@see \haddowg\JsonApi\Resource\Field\BelongsToMany} declaring pivot fields
      * whose association entity resolves. False routes the fetch to the plain
-     * {@see DataProviderInterface::fetchRelatedCollection()} path.
+     * {@see DataProviderInterface::fetchRelatedCollection()} path; the stored values
+     * still come from {@see fetchRelatedPivotMap()} and {@see fetchRelatedPivotMapBatch()}.
      */
     public function supportsPivot(string $relatedType, RelationInterface $relation): bool;
 

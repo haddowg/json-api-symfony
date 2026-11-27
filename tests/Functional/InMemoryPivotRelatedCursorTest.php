@@ -11,22 +11,16 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * {@see PivotRelatedCursorConformanceTestCase} against the in-memory provider —
  * the witness half: the SAME `pivotWidgets` declaration pages through the PLAIN
- * keyset execution (the members read off the parent's `widgets` property),
- * because the in-memory provider is not pivot-aware — the documented pivot
- * boundary. The page walks are byte-identical to the Doctrine pivot push-down's;
- * only the pivot vocabulary/meta differ (asserted via `expectsPivotMeta()` and
- * the 400 below).
+ * keyset execution (the members read off the parent's `widgets` property), as the
+ * in-memory provider reads its pivot rows but doesn't query them. The page walks and
+ * each member's `meta.pivot` are byte-identical to the Doctrine pivot push-down's; only
+ * the pivot vocabulary differs (the 400 below).
  */
 final class InMemoryPivotRelatedCursorTest extends PivotRelatedCursorConformanceTestCase
 {
     protected static function getKernelClass(): string
     {
         return JsonApiTestKernel::class;
-    }
-
-    protected function expectsPivotMeta(): bool
-    {
-        return false;
     }
 
     #[Test]

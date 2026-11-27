@@ -131,18 +131,26 @@ final class PivotMetaSerializer implements
 
         $id = $this->inner->getId($object);
         $pivot = $this->map()[$id] ?? $this->byComparableId()[StoredIdForms::comparable($id)] ?? null;
-        $hooked = $this->parent !== null && $this->relation !== null && PivotFields::readsThroughHook($this->relation);
-        if ($hooked && $this->relation instanceof BelongsToMany && $pivot !== null) {
-            $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
-        }
-        if ($pivot !== null && $this->relation !== null) {
-            $pivot = $this->readable($pivot, $request, $object);
-        }
-        if ($pivot !== null && $pivot !== []) {
-            $meta['pivot'] = $pivot;
+        if (!$this->relation instanceof BelongsToMany) {
+            // Without the relation the map renders as given, an empty entry as an object.
+            if ($pivot !== null) {
+                $meta['pivot'] = $pivot === [] ? new \stdClass() : $pivot;
+            }
+
+            return $meta;
         }
 
-        return $meta;
+        // A relation declaring no pivot field, an additionalProperties entry at most,
+        // renders none. A member with no row renders each stored field as `null`.
+        if ($this->relation->pivotFields() === []) {
+            return $meta;
+        }
+        $pivot ??= [];
+        if ($this->parent !== null && PivotFields::readsThroughHook($this->relation)) {
+            $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
+        }
+
+        return $this->withObject($meta, $this->readable($pivot, $request, $object));
     }
 
     /**
@@ -174,9 +182,22 @@ final class PivotMetaSerializer implements
                 $pivot[$field->name()] = $values[$field->name()] ?? null;
             }
         }
-        if ($pivot !== []) {
-            $meta['pivot'] = $pivot;
-        }
+
+        return $this->withObject($meta, $pivot);
+    }
+
+    /**
+     * `$meta` with `$pivot` under `pivot`, an empty object when every field is hidden for
+     * the request, as the response pivot schema requires the member.
+     *
+     * @param array<string, mixed> $meta
+     * @param array<string, mixed> $pivot
+     *
+     * @return array<string, mixed>
+     */
+    private function withObject(array $meta, array $pivot): array
+    {
+        $meta['pivot'] = $pivot === [] ? new \stdClass() : $pivot;
 
         return $meta;
     }

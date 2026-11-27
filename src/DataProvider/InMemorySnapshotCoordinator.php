@@ -100,16 +100,18 @@ final class InMemorySnapshotCoordinator implements ResetInterface
         }
 
         $maps = [];
+        $pivots = [];
         $this->capturedNextIds = [];
         foreach ($this->stores as $index => $store) {
             $maps[$index] = $store->exportItems();
+            $pivots[$index] = $store->exportPivotRows();
             $this->capturedNextIds[$index] = $store->exportNextId();
         }
 
         // ONE serialize pass over every store's map together: a shared object reference
         // (a store-A parent → a store-B related object) is encoded once, so unserialize
         // reconstructs it as a single instance shared across the restored maps.
-        $this->captured = \serialize($maps);
+        $this->captured = \serialize([$maps, $pivots]);
 
         return true;
     }
@@ -126,11 +128,13 @@ final class InMemorySnapshotCoordinator implements ResetInterface
             return;
         }
 
-        /** @var array<int, array<string, object>> $maps */
-        $maps = \unserialize($this->captured);
+        /** @var array{array<int, array<string, object>>, array<int, array<string, array<array-key, array<array-key, array<string, mixed>>>>>} $captured */
+        $captured = \unserialize($this->captured);
+        [$maps, $pivots] = $captured;
 
         foreach ($this->stores as $index => $store) {
             $store->importItems($maps[$index] ?? [], $this->capturedNextIds[$index] ?? 1);
+            $store->importPivotRows($pivots[$index] ?? []);
         }
 
         $this->captured = null;

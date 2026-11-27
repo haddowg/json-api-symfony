@@ -24,10 +24,9 @@ use function Symfony\Component\DependencyInjection\Loader\Configurator\service;
 /**
  * The in-memory pivot boundary witness kernel: a `playlists` type whose `tracks`
  * relation is a {@see \haddowg\JsonApi\Resource\Field\BelongsToMany} declaring pivot
- * fields, served over the in-memory provider (which is NOT pivot-aware). It proves
- * the documented boundary — pivot is Doctrine-only: on this provider a pivot
- * `?filter`/`?sort` key is unrecognised (400) and no pivot meta renders, while the
- * track's own `?filter[title]` still works.
+ * fields, served over the in-memory provider, which stores pivot rows but doesn't query
+ * them: a pivot `?filter`/`?sort` key is unrecognised (400) while each member renders its
+ * stored `meta.pivot` and the track's own `?filter[title]` still works.
  */
 final class PivotBoundaryTestKernel extends Kernel
 {
@@ -101,7 +100,7 @@ final class PivotBoundaryTestKernel extends Kernel
 
         $services->set('test.pivot_playlists_persister', InMemoryDataPersister::class)
             ->factory([PivotPlaylistFactory::class, 'createPersister'])
-            ->args([service('test.pivot_playlists_provider')])
+            ->args([service('test.pivot_playlists_provider'), service('test.pivot_tracks_provider')])
             ->tag(JsonApiBundle::DATA_PERSISTER_TAG);
 
         $services->set('test.pivot_tracks_persister', InMemoryDataPersister::class)

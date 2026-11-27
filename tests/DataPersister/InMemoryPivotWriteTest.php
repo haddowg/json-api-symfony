@@ -15,18 +15,15 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The in-memory pivot WRITE boundary: pivot data is Doctrine-only (it needs an
- * association entity the in-memory provider cannot model), so a pivot-meta write is
- * IGNORED in-memory — consistent with read being unsupported there. The
- * {@see InMemoryDataPersister} resolves the linkage ids to the stored related objects
- * and sets the parent's plain to-many property; the per-member pivot `meta` carried
- * on each {@see ResourceIdentifier} is never consulted (the relation is not
- * pivot-backed in-memory — there is no join row to hold it).
+ * The in-memory pivot write: the {@see InMemoryDataPersister} resolves the linkage ids to
+ * the stored related objects, sets the parent's plain to-many property, and keeps each
+ * member's pivot `meta` as a pivot row beside the parent in its store, leaving the related
+ * objects as they are.
  */
-final class InMemoryPivotWriteIgnoreTest extends TestCase
+final class InMemoryPivotWriteTest extends TestCase
 {
     #[Test]
-    public function aPivotMetaWriteIsIgnoredInMemory(): void
+    public function aPivotMetaWriteStoresAPivotRowBesideTheParent(): void
     {
         // A parent POJO whose `tracks` is a plain object list (no place for pivot
         // data), and two stored related track POJOs the resolver hands back.
@@ -58,11 +55,11 @@ final class InMemoryPivotWriteIgnoreTest extends TestCase
         );
 
         // The SAME belongsToMany pivot relation the Doctrine fixture declares, with a
-        // WRITABLE position field — meaningless in-memory.
+        // WRITABLE position field.
         $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->build())->build();
 
         // A to-many linkage whose members carry pivot meta (position) — exactly the
-        // write convention. In-memory it is applied as a plain membership set.
+        // write convention.
         $linkage = new ToManyRelationship([
             new ResourceIdentifier('tracks', '1', meta: ['pivot' => ['position' => 3]]),
             new ResourceIdentifier('tracks', '2', meta: ['pivot' => ['position' => 1]]),
@@ -70,11 +67,13 @@ final class InMemoryPivotWriteIgnoreTest extends TestCase
 
         $persister->mutateRelationship('playlists', $parent, $relation, $linkage, Mode::Replace);
 
-        // The membership is set (both tracks linked), but the meta is ignored: the
-        // related objects carry no pivot value anywhere — they are the bare stored
-        // objects, untouched by the position meta.
+        // The membership is set, each member's position is kept on its pivot row, and the
+        // related objects are left as they are.
         self::assertSame([$intro, $outro], $parent->tracks);
+        self::assertSame(['1' => ['position' => 3], '2' => ['position' => 1]], $store->pivotRows($parent, 'tracks'));
         self::assertObjectNotHasProperty('position', $intro);
-        self::assertObjectNotHasProperty('pivot', $intro);
+
+        $persister->mutateRelationship('playlists', $parent, $relation, new ToManyRelationship([new ResourceIdentifier('tracks', '1')]), Mode::Remove);
+        self::assertSame(['2' => ['position' => 1]], $store->pivotRows($parent, 'tracks'));
     }
 }

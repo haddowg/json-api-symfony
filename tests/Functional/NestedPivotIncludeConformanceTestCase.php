@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
+use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Request;
@@ -23,6 +25,8 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  */
 abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    use SchemaConformanceTrait;
+
     protected const array REDS = ['1' => ['role' => 'Reds:Ada', 'badge' => 'ADA'], '3' => ['role' => 'Reds:Linus']];
     protected const array BLUES = ['1' => ['role' => 'Blues:Ada', 'badge' => 'ADA'], '2' => ['role' => 'Blues:Grace', 'badge' => 'GRACE']];
     protected const array ARK = ['3' => ['post' => 'Ark:Linus']];
@@ -30,7 +34,7 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
      * The pivot relations of each type, whose linkage members carry `meta.pivot` wherever
      * their data renders.
      */
-    protected const array PIVOT_RELATIONS = ['cp-crews' => ['members', 'staff'], 'cp-ships' => ['members'], 'cp-fleets' => ['hands']];
+    protected const array PIVOT_RELATIONS = ['cp-crews' => ['members', 'staff', 'quietMembers'], 'cp-ships' => ['members'], 'cp-fleets' => ['hands']];
 
     protected const array BARK = ['1' => ['post' => 'Bark:Ada'], '2' => ['post' => 'Bark:Grace']];
 
@@ -460,6 +464,45 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
     }
 
     #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aMemberWhoseEveryPivotFieldIsHiddenCarriesAnEmptyPivotObject(): void
+    {
+        // Linus is crew 1's member whose only `quietMembers` pivot field is hidden.
+        foreach (['/cp-crews/1?include=quietMembers', '/cp-crews/1/quietMembers', '/cp-crews/1/relationships/quietMembers'] as $path) {
+            $response = $this->handle($path);
+            self::assertSame(200, $response->getStatusCode(), $path);
+            $content = (string) $response->getContent();
+
+            self::assertStringContainsString('"type":"cp-members","id":"3","meta":{"pivot":{}}', $content, $path);
+            self::assertStringContainsString('"meta":{"pivot":{"badge":"ADA"}}', $content, $path);
+            self::assertStringNotContainsString('"pivot":[]', $content, $path);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function everyRenderedPivotLinkageMatchesTheResponseSchema(): void
+    {
+        // The response schema requires `meta.pivot` on each member of a pivot linkage.
+        foreach ([
+            ['/cp-crews/1?include=members,quietMembers', 'cp-crews', SchemaDocumentKind::Single],
+            ['/cp-crews', 'cp-crews', SchemaDocumentKind::Collection],
+            ['/cp-ships?include=crew', 'cp-ships', SchemaDocumentKind::Collection],
+            ['/cp-fleets/1?include=hands,ships.crew', 'cp-fleets', SchemaDocumentKind::Single],
+        ] as [$path, $type, $kind]) {
+            $response = $this->handle($path);
+            self::assertSame(200, $response->getStatusCode(), $path);
+            $this->assertResponseMatchesGeneratedSchema($response, $type, $kind);
+        }
+
+        foreach (['members', 'staff', 'quietMembers'] as $relation) {
+            $response = $this->handle('/cp-crews/1/relationships/' . $relation);
+            self::assertSame(200, $response->getStatusCode(), $relation);
+            $this->assertResponseMatchesGeneratedSchema($response, 'cp-crews', SchemaDocumentKind::Relationship, $relation);
+        }
+    }
+
+    #[Test]
     #[Group('spec:crud')]
     public function aWriteResponseCarriesThePivotOfEveryLinkageItRenders(): void
     {
@@ -719,7 +762,7 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
 
     /**
      * Asserts that every member of every pivot relation's linkage the document renders,
-     * on its primary data and on its included resources, carries `meta.pivot`. Returns
+     * on its primary data and on its included resources, carries a `meta.pivot` object. Returns
      * how many linkage members it checked.
      *
      * @param array<string, mixed> $document
@@ -746,8 +789,9 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
                     $meta = $member['meta'] ?? null;
                     $where = \sprintf('%s: %s %s %s member %s', $context, \json_encode($type), \json_encode($resource['id'] ?? null), $relation, \json_encode($member));
                     self::assertIsArray($meta, $where);
-                    self::assertIsArray($meta['pivot'] ?? null, $where);
-                    self::assertNotSame([], $meta['pivot'], $where);
+                    // An empty object decodes to an empty array: a member may have every field hidden.
+                    self::assertArrayHasKey('pivot', $meta, $where);
+                    self::assertIsArray($meta['pivot'], $where);
                     ++$checked;
                 }
             }

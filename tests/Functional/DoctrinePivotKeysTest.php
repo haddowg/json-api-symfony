@@ -27,7 +27,7 @@ use Symfony\Component\Uid\UuidV7;
  * `placeholder-definitions` by a binary UUID. They meet through a pivot entity with a
  * binary UUID id and a collection, both set by its constructor. Every pivot read runs
  * in both directions, so each side is the related type of one of them. Doctrine-only:
- * the in-memory provider holds no pivot entity.
+ * the pivot entity's binary keys need a database.
  */
 #[Group('spec:crud')]
 final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase

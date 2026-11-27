@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
+use haddowg\JsonApi\Resource\Field\AdditionalProperties;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
@@ -47,6 +48,33 @@ final class PivotMetaSerializerTest extends TestCase
 
         self::assertSame(['pivot' => ['position' => 1, 'label' => 'a']], $serializer->getMeta(['id' => 't7'], $request));
         self::assertSame(['pivot' => ['position' => 2]], $serializer->getMeta(['id' => 't8'], $request));
+    }
+
+    #[Test]
+    public function aMemberWithNoPivotRowRendersEachStoredFieldAsNull(): void
+    {
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position'), Str::make('label'))->build();
+        $serializer = $this->serializer($relation, ['t7' => ['position' => 1, 'label' => 'a']]);
+
+        self::assertSame('{"pivot":{"position":null,"label":null}}', \json_encode($serializer->getMeta(['id' => 't9'], $this->createStub(JsonApiRequestInterface::class))));
+    }
+
+    #[Test]
+    public function aMemberWhoseEveryPivotFieldIsHiddenRendersAnEmptyObject(): void
+    {
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position')->hidden(static fn(): bool => true))->build();
+        $serializer = $this->serializer($relation, ['t7' => ['position' => 1]]);
+
+        self::assertSame('{"pivot":{}}', \json_encode($serializer->getMeta(['id' => 't7'], $this->createStub(JsonApiRequestInterface::class))));
+    }
+
+    #[Test]
+    public function aRelationDeclaringOnlyAdditionalPropertiesRendersNoPivot(): void
+    {
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(AdditionalProperties::make())->build();
+        $serializer = $this->serializer($relation, ['t7' => ['extra' => 1]]);
+
+        self::assertSame([], $serializer->getMeta(['id' => 't7'], $this->createStub(JsonApiRequestInterface::class)));
     }
 
     /**

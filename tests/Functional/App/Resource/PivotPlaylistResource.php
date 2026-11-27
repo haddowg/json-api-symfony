@@ -18,16 +18,16 @@ use haddowg\JsonApi\Resource\Sort\SortByField;
 /**
  * The in-memory `playlists` resource for the pivot boundary witness. It declares
  * the SAME `tracks` {@see BelongsToMany} with pivot fields the Doctrine fixture
- * does — but the in-memory provider is not pivot-aware, so the pivot vocabulary is
- * NOT merged on its related endpoint: a `?filter[position]`/`?sort=position` key is
- * unrecognised (400) and no pivot meta renders. The `tracks` read off the parent's
- * `tracks` property exactly as a plain to-many.
+ * does. The in-memory provider reads its pivot rows but doesn't query them, so the
+ * pivot vocabulary is NOT merged on its related endpoint: a
+ * `?filter[position]`/`?sort=position` key is unrecognised (400), while each member
+ * renders its stored `meta.pivot`. The `tracks` read off the parent's `tracks`
+ * property exactly as a plain to-many.
  *
  * It also declares a `dataTracks` pivot relation that renders its linkage data BY
- * DEFAULT (`withData()`, reading the same `tracks` property) — the in-memory
- * boundary witness for a PRIMARY document: because the in-memory
- * provider is not pivot-aware, the default-rendered linkage carries NO `meta.pivot`,
- * exactly as the related/relationship endpoints carry none here.
+ * DEFAULT (`withData()`, over the same `tracks` property and pivot rows), whose
+ * default-rendered linkage on a PRIMARY document carries `meta.pivot` as the
+ * related/relationship endpoints do.
  */
 final class PivotPlaylistResource extends AbstractResource
 {

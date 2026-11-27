@@ -514,6 +514,19 @@ you implement either, or from `fetchOne()`, and one that doesn't is a `404`
 (see [relationships → written linkage](relationships.md#written-linkage-is-checked-against-the-related-types-provider)).
 Make those reads apply the same scope as your related reads.
 
+### Reading pivot rows
+
+A `belongsToMany` with stored pivot fields renders each member's `meta.pivot` wherever its
+linkage data renders, and the provider of its related type reads the stored values. Implement
+`PivotAwareProviderInterface` on it: `fetchRelatedPivotMap()` returns one parent's values and
+`fetchRelatedPivotMapBatch()` every parent's at one include path, keyed by the parent's wire id
+and then the member's. `supportsPivot()` says whether it also queries the rows, filtering,
+sorting and paging a related read by a pivot field through `fetchRelatedPivotCollection()`;
+answer `false` and the related reads take the plain path, as the in-memory provider's do. A
+relation with stored pivot fields whose related type's provider doesn't implement the
+interface fails the cache warm-up, naming the relation, the type, the provider and the
+interface.
+
 ### Loading many rows by id
 
 A `MorphTo` declared with `identifiedBy()` stores its target as a type and id pair, so
@@ -663,8 +676,11 @@ relations straight off the model, so it can't look an id up. A model that holds 
 where an object belongs fails the read with a `\LogicException` naming the type and the
 relation, rather than rendering an identifier with an empty `id`.
 
-Pivot paths need a store with pivot rows, and the in-memory store holds none. On a type it
-serves, a filter whose `->through()` path starts at `pivot` and reads a pivot field
+The in-memory store keeps each parent's pivot rows beside it and reads them through
+`PivotAwareProviderInterface`, so every response renders their stored fields, but it doesn't
+query them. Seed rows with
+`$provider->store()->writePivotRows($parent, $relationColumn, [$memberId => [$column => $value]])`.
+Pivot paths need a store that queries pivot rows. On a type it serves, a filter whose `->through()` path starts at `pivot` and reads a pivot field
 answers `400`, as a pivot column filter does. A path with `pivot` after a relation, such as
 `tracks.playlists.pivot`, answers `400` too, and so does a filter default declared on one,
 on every read that applies it. A path that goes on past `pivot`, such as

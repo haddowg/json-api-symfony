@@ -1590,10 +1590,9 @@ The `meta` is validated against the writable pivot fields' constraints (in the
 operation's create/update context) before the diff runs — a violation is a `422`
 pointed at the linkage meta, with no write.
 
-**Boundaries.** Pivot is **Doctrine-only** — the in-memory provider has no association
-entity, so a pivot key `400`s there, no stored pivot field renders, and a pivot-meta
-**write is ignored** (the relation is a plain to-many in-memory). Only the computed
-pivot fields render there, which need no storage. A `belongsToMany` without
+**Boundaries.** Querying pivot rows is **Doctrine-only**: the in-memory provider keeps
+its pivot rows beside each parent without querying them, so a pivot key `400`s there,
+while its writes store the pivot fields and its responses render them. A `belongsToMany` without
 `fields()` keeps the plain related-collection scoping above. See
 [relationships.md](relationships.md#pivot-belongstomany-data) for the resource
 declaration, the rendered shape and the write convention.

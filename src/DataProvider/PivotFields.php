@@ -70,6 +70,16 @@ final class PivotFields
     }
 
     /**
+     * Whether `$provider` reads the stored pivot values of `$relation`: a
+     * {@see PivotAwareProviderInterface} serving a `belongsToMany` with stored pivot fields,
+     * whether or not it also queries them.
+     */
+    public static function readsStored(?object $provider, RelationInterface $relation): bool
+    {
+        return $provider instanceof PivotAwareProviderInterface && $relation instanceof BelongsToMany && $relation->storedPivotFields() !== [];
+    }
+
+    /**
      * Whether `$relation` declares a pivot field read through a hook, a computed field or a
      * stored one with an `extractUsing()` hook
      * ({@see BelongsToMany::readsPivotFieldThroughHook()}).

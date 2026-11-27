@@ -1146,10 +1146,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $serializer = match (true) {
                 $identifiedTypes !== null => $this->identifiedSerializer($relation, $members, $identifiedTypes, $identifiedPivots),
                 $polymorphic => PolymorphicSerializer::forRelation($relation, $members),
-                // Computed pivot fields need no stored row, so they render off the parent
-                // even where no pivot query ran.
-                PivotFields::hasComputed($relation) => new PivotMetaSerializer($this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
-                default => $this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request),
+                default => $this->unqueriedPivot($this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request), $relation, $parent, $relatedProvider, $relatedType),
             };
 
             // A cursor (keyset) related page: the provider minted the boundary tokens
@@ -1363,9 +1360,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 }
 
                 $serializer = $resolver->serializerFor($types[\spl_object_id($object)]);
-                $pivot = $pivots[\spl_object_id($object)] ?? null;
-
-                return $pivot === null ? $serializer : new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivot]);
+                // A relation with pivot fields gives each member its `meta.pivot`, empty
+                // when every field is hidden for the request.
+                return $relation instanceof PivotRelationInterface && $relation->pivotFields() !== []
+                    ? new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivots[\spl_object_id($object)] ?? []])
+                    : $serializer;
             },
             PolymorphicSerializer::forRelation($relation, $resolver)->members(),
         );
@@ -1673,15 +1672,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // rendered nothing — a wasted fetch).
             $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
 
-            // Computed pivot fields render off the parent with no pivot query behind them.
-            $parentSerializer = PivotFields::hasComputed($relation)
-                ? new PivotParentSerializer(
-                    $server->serializerFor($type),
-                    $relationshipName,
-                    $relation,
-                    $server,
-                    new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
-                )
+            $pivotSerializer = $this->unqueriedPivot($server->serializerFor($relatedType), $relation, $parent, $relatedProvider, $relatedType);
+            $parentSerializer = $pivotSerializer instanceof PivotMetaSerializer
+                ? new PivotParentSerializer($server->serializerFor($type), $relationshipName, $relation, $server, $pivotSerializer)
                 : $server->serializerFor($type);
             $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName, $relation->isCountable());
 
@@ -1954,13 +1947,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             Mode::Remove => OperationType::RemoveRelationship,
             default => OperationType::UpdateRelationship,
         }, $relationshipName);
-        // Computed pivot fields render off the parent where no pivot rows were read.
-        $pivotSerializer = match (true) {
-            $pivotResult !== null => new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone()),
-            PivotFields::hasComputed($relation) => new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
-            default => null,
-        };
-        $parentSerializer = $pivotSerializer === null
+        $pivotSerializer = $pivotResult !== null
+            ? new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone())
+            : $this->unqueriedPivot($server->serializerFor($relatedType), $relation, $parent, $relatedProvider, $relatedType);
+        $parentSerializer = !$pivotSerializer instanceof PivotMetaSerializer
             ? $server->serializerFor($type)
             : new PivotParentSerializer($server->serializerFor($type), $relationshipName, $relation, $server, $pivotSerializer);
         $response = $documentMeta !== null && !$documentMeta->isEmpty()
@@ -2320,10 +2310,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      *
      * Every readable pivot relation is rebound, whatever makes its linkage data render
      * for THIS request: an include (default-includes honoured), `withData()`, a value
-     * already loaded on the model, or a relation with no links to render instead. Only
-     * the related provider that {@see PivotAwareProviderInterface::supportsPivot()}
-     * contributes stored values (the Doctrine reference; the in-memory provider does
-     * not, the documented pivot boundary); computed pivot fields render everywhere.
+     * already loaded on the model, or a relation with no links to render instead. The
+     * related type's {@see PivotAwareProviderInterface} supplies the stored values, which
+     * the Doctrine and in-memory providers both read; computed pivot fields render
+     * everywhere.
      *
      * For each relation it binds a {@see PivotMapBatch} that reads the per-parent pivot
      * map for the whole page in ONE statement (no N+1) the first time a member's pivot
@@ -2439,7 +2429,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $relatedProvider = $this->providers->forType($relatedType);
-            $stored = $relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation);
+            $stored = $relatedProvider instanceof PivotAwareProviderInterface && PivotFields::readsStored($relatedProvider, $relation);
             if (!$stored && !PivotFields::hasComputed($relation)) {
                 continue;
             }
@@ -2464,6 +2454,24 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps, $this->outputTimezone?->timezone(), $nested, $only);
+    }
+
+    /**
+     * `$related` decorated so a pivot relation read without a pivot query renders each
+     * member's `meta.pivot`: the stored values its provider reads through
+     * {@see PivotAwareProviderInterface::fetchRelatedPivotMap()} beside the computed fields,
+     * or the computed fields alone where nothing is stored. A relation with no pivot fields
+     * keeps `$related`.
+     */
+    private function unqueriedPivot(SerializerInterface $related, RelationInterface $relation, object $parent, ?object $relatedProvider, string $relatedType): SerializerInterface
+    {
+        if ($relatedProvider instanceof PivotAwareProviderInterface && PivotFields::readsStored($relatedProvider, $relation)) {
+            return new PivotMetaSerializer($related, $relatedProvider->fetchRelatedPivotMap($relatedType, $parent, $relation), $relation, $parent, $this->outputTimezone?->timezone());
+        }
+
+        return PivotFields::hasComputed($relation)
+            ? new PivotMetaSerializer($related, [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true)
+            : $related;
     }
 
     /**

@@ -11,16 +11,12 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * The in-memory pivot boundary witness: pivot data is Doctrine-only (it requires an
- * association entity the in-memory provider cannot model). So on the in-memory
- * `playlists.tracks` related endpoint a pivot `?filter`/`?sort` key is unrecognised
- * (400) and no pivot meta renders — while the track's OWN `?filter[title]` works,
- * proving the related collection itself functions and only the PIVOT keys are
- * absent.
- *
- * The boundary extends to a PRIMARY document: a `withData()` pivot
- * relation's default-rendered linkage on `GET /playlists/1` carries NO `meta.pivot`,
- * because the in-memory provider is not pivot-aware — the wrap is a clean no-op.
+ * The in-memory pivot boundary witness: the in-memory provider keeps pivot rows beside each
+ * parent but doesn't query them. So on the `playlists.tracks` related endpoint a pivot
+ * `?filter`/`?sort` key is unrecognised (400) while the track's OWN `?filter[title]` works,
+ * and every member renders its stored `meta.pivot`, on the related and relationship
+ * endpoints and on a primary document's default-rendered linkage alike. A relationship
+ * write stores the pivot fields each member sends.
  */
 final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
 {
@@ -85,58 +81,68 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-relationships')]
-    public function theInMemoryRelatedEndpointStillWorksWithoutPivot(): void
+    public function theInMemoryRelatedEndpointRendersEachMembersStoredPivot(): void
     {
-        // The related collection itself works in-memory (only pivot is absent): a
-        // plain fetch returns the tracks, and the track's own filter narrows them —
-        // with no pivot meta on any member.
+        // The related collection itself works in memory: the track's own filter narrows
+        // it, and each member renders the position its pivot row holds.
         $response = $this->handle(self::BASE_URI . '/playlists/1/tracks?filter[title]=o');
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-
-        $document = $this->decode($response);
-        $data = $document['data'] ?? null;
-        self::assertIsArray($data);
-        self::assertNotSame([], $data);
-
-        foreach ($data as $resource) {
-            self::assertIsArray($resource);
-            $meta = $resource['meta'] ?? [];
-            self::assertIsArray($meta);
-            self::assertArrayNotHasKey('pivot', $meta);
-        }
+        self::assertSame(['1' => ['position' => 1], '2' => ['position' => 2]], $this->pivots($this->decode($response)['data'] ?? null));
+        self::assertSame(['1' => ['position' => 1], '2' => ['position' => 2]], $this->pivots($this->decode($this->handle(self::BASE_URI . '/playlists/1/relationships/tracks'))['data'] ?? null));
     }
 
     #[Test]
     #[Group('spec:fetching-relationships')]
-    public function aPrimaryDocumentDefaultLinkageCarriesNoPivotInMemory(): void
+    public function aPrimaryDocumentDefaultLinkageCarriesItsStoredPivotInMemory(): void
     {
-        // `dataTracks` renders its linkage data by default (withData()). On a primary
-        // GET /playlists/1 over the in-memory provider the linkage identifiers carry NO
-        // meta.pivot — the documented boundary holds on a primary document too: the in-memory
-        // provider is not pivot-aware, so the wrap is a no-op.
+        // `dataTracks` renders its linkage data by default (withData()) over the same rows.
         $response = $this->handle(self::BASE_URI . '/playlists/1');
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
-
-        $document = $this->decode($response);
-        $data = $document['data'] ?? null;
+        $data = $this->decode($response)['data'] ?? null;
         self::assertIsArray($data);
-
         $relationships = $data['relationships'] ?? null;
         self::assertIsArray($relationships);
         $dataTracks = $relationships['dataTracks'] ?? null;
         self::assertIsArray($dataTracks);
+        self::assertSame(['1' => ['position' => 1], '2' => ['position' => 2]], $this->pivots($dataTracks['data'] ?? null));
+    }
 
-        $linkage = $dataTracks['data'] ?? null;
-        self::assertIsArray($linkage);
-        self::assertNotSame([], $linkage, 'the default-rendered linkage carries members');
+    #[Test]
+    #[Group('spec:updating-relationships')]
+    public function aRelationshipWriteStoresThePivotFieldsEachMemberSends(): void
+    {
+        $add = $this->handle(self::BASE_URI . '/playlists/1/relationships/dataTracks', 'PATCH', ['data' => [
+            ['type' => 'tracks', 'id' => '2', 'meta' => ['pivot' => ['position' => 5]]],
+            ['type' => 'tracks', 'id' => '1'],
+        ]]);
+        self::assertSame(200, $add->getStatusCode(), (string) $add->getContent());
+        self::assertSame(['1' => ['position' => 1], '2' => ['position' => 5]], $this->pivots($this->decode($add)['data'] ?? null));
 
-        foreach ($linkage as $identifier) {
-            self::assertIsArray($identifier);
-            $meta = $identifier['meta'] ?? [];
-            self::assertIsArray($meta);
-            self::assertArrayNotHasKey('pivot', $meta, 'no pivot on the in-memory primary linkage');
+        $removed = $this->handle(self::BASE_URI . '/playlists/1/relationships/dataTracks', 'DELETE', ['data' => [['type' => 'tracks', 'id' => '1']]]);
+        self::assertSame(200, $removed->getStatusCode(), (string) $removed->getContent());
+        self::assertSame(['2' => ['position' => 5]], $this->pivots($this->decode($this->handle(self::BASE_URI . '/playlists/1/relationships/tracks'))['data'] ?? null));
+    }
+
+    /**
+     * Each member's `meta.pivot`, keyed by id in id order.
+     *
+     * @return array<string, mixed>
+     */
+    private function pivots(mixed $members): array
+    {
+        self::assertIsArray($members);
+        $pivots = [];
+        foreach ($members as $member) {
+            self::assertIsArray($member);
+            self::assertIsString($member['id'] ?? null);
+            $meta = $member['meta'] ?? null;
+            self::assertIsArray($meta, (string) \json_encode($member));
+            $pivots[$member['id']] = $meta['pivot'] ?? null;
         }
+        \ksort($pivots);
+
+        return $pivots;
     }
 }

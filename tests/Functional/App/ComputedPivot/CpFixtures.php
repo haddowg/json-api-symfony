@@ -12,7 +12,8 @@ use haddowg\JsonApiBundle\DataProvider\InMemorySnapshotCoordinator;
 /**
  * The seeded graph both kernels serve: three members, crew 1 ("Reds") with Ada and Linus,
  * crew 2 ("Blues") with Ada and Grace, and on Doctrine Ada's and Grace's shifts on crew 1's
- * staff and Linus's on crew 2's. Ships 1 and 3 sail with the Reds, ship 2 with the Blues,
+ * staff and Linus's on crew 2's. In memory, `staff` reads a crew's members, and its pivot rows
+ * hold Ada's and Linus's shifts on crew 1 and Ada's and Grace's on crew 2. Ships 1 and 3 sail with the Reds, ship 2 with the Blues,
  * and fleet 1 holds ships 1 and 2 with ship 3 as its flagship, names ship 2 and crew 1
  * as its vessels, and has Grace as its one hand. Linus serves on ship 1, Ada and Grace on ship 2.
  */
@@ -168,6 +169,10 @@ final class CpFixtures
         $this->crews = $this->provider('cp-crews', $crews);
         $this->ships = $this->provider('cp-ships', $graph['ships']);
         $this->fleets = $this->provider('cp-fleets', $fleets);
+
+        // The `staff` pivot rows the in-memory store keeps beside each crew, keyed by member id.
+        $this->crews->store()->writePivotRows($crews['1'], 'staff', ['1' => ['shift' => 2, 'note' => 'early'], '3' => ['shift' => 5, 'note' => 'late']]);
+        $this->crews->store()->writePivotRows($crews['2'], 'staff', ['1' => ['shift' => 4, 'note' => null], '2' => ['shift' => 6, 'note' => null]]);
     }
 
     /**
