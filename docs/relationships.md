@@ -945,9 +945,8 @@ It renders each member's pivot values as `meta.pivot` on the related endpoint
 (`GET /playlists/1/tracks`), the relationship-linkage endpoint (`GET
 /playlists/1/relationships/tracks`), the `200` linkage a write to that endpoint answers
 with, which lists the members the relationship endpoint then serves, **and in a primary-resource document's
-relationships block** — wherever that relation's linkage data renders, i.e. when it is
-`?include`d (`GET /playlists/1?include=tracks`) or renders data by default
-(`withData()`). It also makes `?sort=position` recognised on that related endpoint
+relationships block**, wherever that relation's linkage data renders. It also makes `?sort=position`
+recognised on that related endpoint
 (routed to the pivot column) — sorting is zero-config:
 
 ```jsonc
@@ -960,12 +959,14 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 ]
 ```
 
-> **On a primary document, pivot rides the linkage where its data renders.** In a
-> primary-resource document (`GET /playlists/1`) a pivot relation's linkage carries
-> `meta.pivot` on each identifier **only where its linkage data renders** — when the
-> relation is `?include`d, or renders data by default (`withData()`). A lazy,
-> not-included relation renders links-only and carries no pivot, so opt it in with
-> `withData()` (or request it with `?include`) to surface pivot without an `?include`.
+> **Pivot rides every linkage that renders data.** Whatever makes a pivot relation's
+> linkage data render, each identifier carries its `meta.pivot`: an `?include`,
+> `withData()`, a relation whose value is already loaded on the model (a collection
+> something else initialised, the members a write just set, or an `extractUsing()`
+> relation the data layer can't see into), or a relation with no links to render
+> instead (`withoutLinks()`). A lazy relation whose data stays out of the document renders links only, and
+> no pivot is read for it. The pivot values are read once per include path for every
+> parent at it, and only when a member's pivot renders.
 > Stored pivot data is Doctrine-only (it needs an association entity): the in-memory
 > provider never renders a stored field, on any endpoint or document, a stored field
 > with an `extractUsing()` hook included. A
@@ -976,9 +977,9 @@ The same holds wherever the parent renders, not only as the primary resource. A 
 relation reached through a nested include (`GET /users/1?include=playlists.tracks`, at
 any depth) carries `meta.pivot` on its linkage and on its included members, and so does
 one included from a related endpoint (`GET /users/1/playlists?include=tracks`), a
-`MorphToMany` related endpoint among them, in the response to a create or update
-that names `?include`, or in a custom action's response, its `202` job resource
-included. The pivot map is read once per
+`MorphToMany` related endpoint among them, in the response to a create or update, in a
+relationship write's `200` linkage, in an Atomic Operations result, or in a custom
+action's response, its `202` job resource included. The pivot map is read once per
 include path for every parent at it, never once per parent.
 
 An included member is one resource object, so when two parents link to the same member

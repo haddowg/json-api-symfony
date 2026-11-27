@@ -39,7 +39,7 @@ class CpCrewResource extends AbstractResource
     }
 
     /**
-     * The `staff` pivot: the stored `shift`, the stored `note` read through an extract hook
+     * The `staff` pivot: the required stored `shift`, the stored `note` read through an extract hook
      * that upper-cases it, and the computed `role`.
      *
      * @return list<\haddowg\JsonApi\Resource\Field\FieldBuilderInterface>
@@ -47,7 +47,7 @@ class CpCrewResource extends AbstractResource
     protected static function staffFields(): array
     {
         return [
-            Integer::make('shift'),
+            Integer::make('shift')->required(),
             Str::make('note')->extractUsing(static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['note'] ?? null)
                 ? \strtoupper($edge->pivot['note'])
                 : null),

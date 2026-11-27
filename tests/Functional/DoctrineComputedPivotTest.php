@@ -74,6 +74,7 @@ final class DoctrineComputedPivotTest extends ComputedPivotConformanceTestCase
             ['type' => 'cp-members', 'id' => '1', 'meta' => ['pivot' => ['shift' => 3, 'note' => 'night', 'role' => 'ignored']]],
         ]]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['1' => ['shift' => 3, 'note' => 'NIGHT', 'role' => 'Reds:Ada']], $this->pivots($this->decode($response)));
 
         self::assertSame(['1' => ['shift' => 3, 'note' => 'NIGHT', 'role' => 'Reds:Ada']], $this->pivots($this->get('/cp-crews/1/relationships/staff')));
         self::assertSame(['night'], $this->storedNotes('1'));
@@ -89,6 +90,7 @@ final class DoctrineComputedPivotTest extends ComputedPivotConformanceTestCase
             'relationships' => ['staff' => ['data' => [['type' => 'cp-members', 'id' => '2', 'meta' => ['pivot' => ['shift' => 7, 'note' => 'dawn']]]]]],
         ]]);
         self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['2' => ['shift' => 7, 'note' => 'DAWN', 'role' => 'Blues:Grace']], $this->pivots($this->linkage($this->decode($response), 'staff')));
 
         self::assertSame(['2' => ['shift' => 7, 'note' => 'DAWN', 'role' => 'Blues:Grace']], $this->pivots($this->get('/cp-crews/9/staff')));
         self::assertSame(['dawn'], $this->storedNotes('9'));

@@ -82,4 +82,43 @@ final class DoctrineNestedPivotIncludeTest extends NestedPivotIncludeConformance
         }
         self::assertLessThanOrEqual(2, \count($pivotReads), \implode("\n", $pivotReads));
     }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aStoredPivotLinkageRenderedWithoutAnIncludeRendersItsColumns(): void
+    {
+        $document = $this->get('/cp-crews/1?include=members');
+        self::assertSame(self::REDS_STAFF, $this->pivots($this->linkage($document, 'staff')));
+
+        $document = $this->get('/cp-ships?include=crew');
+        self::assertSame(self::REDS_STAFF, $this->pivots($this->includedLinkage($document, 'cp-crews', '1', 'staff')));
+        self::assertSame(self::BLUES_STAFF, $this->pivots($this->includedLinkage($document, 'cp-crews', '2', 'staff')));
+
+        $document = $this->get('/cp-crews');
+        self::assertSame(self::REDS_STAFF, $this->pivots($this->dataLinkage($document, 'cp-crews', '1', 'staff')));
+        self::assertSame(self::BLUES_STAFF, $this->pivots($this->dataLinkage($document, 'cp-crews', '2', 'staff')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aStoredPivotLinkageRenderedWithoutAnIncludeIsReadOncePerLevel(): void
+    {
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+
+        foreach (['/cp-crews', '/cp-ships?include=crew'] as $path) {
+            $logger->reset();
+            $this->get($path);
+
+            $pivotReads = \array_values(\array_filter(
+                $logger->statements(),
+                static fn(string $sql): bool => \str_contains($sql, 'cp_shift'),
+            ));
+            self::assertNotEmpty($pivotReads, $path);
+            foreach ($pivotReads as $sql) {
+                self::assertDoesNotMatchRegularExpression('/crew_id\s*=\s*\?/', $sql, $path . "\n" . \implode("\n", $logger->statements()));
+            }
+            self::assertLessThanOrEqual(2, \count($pivotReads), $path . "\n" . \implode("\n", $pivotReads));
+        }
+    }
 }

@@ -82,9 +82,12 @@ final class PivotMetaSerializer implements
 {
     use ForwardsSerializerInterfaces;
 
+    /** @var array<string, array<string, mixed>>|null */
+    private ?array $resolved = null;
+
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
-     * @param array<string, array<string, mixed>>  $pivotMap `memberId => [pivotField => typed value]`
+     * @param array<string, array<string, mixed>>|(\Closure(): array<string, array<string, mixed>>) $pivotMap `memberId => [pivotField => typed value]`, or the read that returns it when a member first renders
      * @param RelationInterface|null               $relation the pivot relation whose fields decide what renders; without it the map renders as given
      * @param object|null                          $parent   the parent whose relation renders, which hooked pivot fields read
      * @param string|null                          $outputTimezone the server's default output zone a hooked date field adopts
@@ -92,7 +95,7 @@ final class PivotMetaSerializer implements
      */
     public function __construct(
         private readonly SerializerInterface $inner,
-        private readonly array $pivotMap,
+        private readonly array|\Closure $pivotMap,
         private readonly ?RelationInterface $relation = null,
         private readonly ?object $parent = null,
         private readonly ?string $outputTimezone = null,
@@ -127,7 +130,7 @@ final class PivotMetaSerializer implements
         }
 
         $id = $this->inner->getId($object);
-        $pivot = $this->pivotMap[$id] ?? $this->byComparableId()[StoredIdForms::comparable($id)] ?? null;
+        $pivot = $this->map()[$id] ?? $this->byComparableId()[StoredIdForms::comparable($id)] ?? null;
         $hooked = $this->parent !== null && $this->relation !== null && PivotFields::readsThroughHook($this->relation);
         if ($hooked && $this->relation instanceof BelongsToMany && $pivot !== null) {
             $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
@@ -208,6 +211,20 @@ final class PivotMetaSerializer implements
     }
 
     /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function map(): array
+    {
+        if ($this->pivotMap instanceof \Closure) {
+            $this->resolved ??= ($this->pivotMap)();
+
+            return $this->resolved;
+        }
+
+        return $this->pivotMap;
+    }
+
+    /**
      * The pivot map keyed by each member's comparable wire id, so a uuid-shaped id the
      * provider keyed in capitals matches the lower case the member renders in.
      *
@@ -216,7 +233,7 @@ final class PivotMetaSerializer implements
     private function byComparableId(): array
     {
         $keyed = [];
-        foreach ($this->pivotMap as $id => $values) {
+        foreach ($this->map() as $id => $values) {
             $keyed[StoredIdForms::comparable($id)] = $values;
         }
 
