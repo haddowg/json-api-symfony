@@ -87,6 +87,36 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
         self::assertNull($this->entityManager()->find(ImGuidOwner::class, self::CAPITAL_GUID));
     }
 
+    #[Test]
+    public function aGuidOwnerWhoseNotesKeepItsKeyInBothCasesIsOnePartition(): void
+    {
+        $this->seedCapitalGuidOwner();
+        $entityManager = $this->entityManager();
+        $entityManager->persist(new ImNote(6, 'Six', null, null, null, null, \strtolower(self::CAPITAL_GUID), null, null, null, 'im-posts', 2));
+        $entityManager->flush();
+        $entityManager->clear();
+
+        $statements = $this->statementsOf('/im-guid-owners?include=notes');
+        $notes = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'from im_note') && \str_contains($sql, 'guidownerid in')));
+
+        $owners = [];
+        foreach ($this->decode($this->handle('/im-guid-owners?include=notes'))['data'] ?? [] as $owner) {
+            self::assertIsArray($owner);
+            $owners[$owner['id'] ?? ''] = $owner;
+        }
+        $data = $this->relationshipData($owners[\strtolower(self::CAPITAL_GUID)] ?? null, 'notes');
+        self::assertIsArray($data);
+        $ids = \array_column($data, 'id');
+        \sort($ids);
+        self::assertSame(['5', '6'], $ids);
+
+        self::assertCount(1, $notes, \implode("\n", $statements));
+        self::assertStringContainsString('partition by', $notes[0]);
+        self::assertStringContainsString('lower(i0_.guidownerid) as', $notes[0]);
+        // The column itself is compared as stored, so an index on it serves the query.
+        self::assertStringContainsString('i0_.guidownerid in (', $notes[0]);
+    }
+
     private const string CAPITAL_GUID = '5F0C3B2D-1E00-4A4E-9C55-7A4E0000AAAA';
 
     /**

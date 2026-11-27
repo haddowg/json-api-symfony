@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms;
 
+use haddowg\JsonApi\Pagination\PagePaginator;
 use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
@@ -23,7 +24,8 @@ final class PifPlayerResource extends AbstractResource
             BelongsToMany::make('teams', 'pif-teams')
                 ->through(PifSeat::class)
                 ->fields(Str::make('role')->nullable()->build())
-                ->withData(),
+                ->withData()
+                ->paginate(PagePaginator::make()),
         ];
     }
 }

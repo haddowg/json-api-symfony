@@ -10,6 +10,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifCoach;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifPlayer;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifTeam;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PivotIdFormsTestKernel;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Uid\Uuid;
@@ -131,6 +132,37 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
         self::assertSame([self::player(self::ANN) => 'captain', self::player(self::BOB) => 'keeper'], $this->roles($this->data($document), 'players'));
         $players = $this->included($document, 'pif-players');
         self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($players[self::player(self::ANN)] ?? [], 'teams'));
+    }
+
+    #[Test]
+    public function aPlayerWhoseSeatsKeepItsKeyInBothCasesIsOnePartition(): void
+    {
+        // Bob's red seat keeps his key in lower case, and this one in capitals.
+        $this->entityManager()->getConnection()->insert(
+            'pif_seat',
+            ['teamId' => Uuid::fromString(self::BLUE), 'playerId' => self::BOB, 'role' => 'bench'],
+            ['teamId' => 'uuid'],
+        );
+
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $logger->reset();
+        $players = $this->get('/pif-players?include=teams');
+        $seats = \array_values(\array_filter(\array_map('\\strtolower', $logger->statements()), static fn(string $sql): bool => \str_contains($sql, 'from pif_team') && \str_contains($sql, 'pif_seat')));
+
+        $rows = [];
+        foreach ($this->rows($players) as $row) {
+            self::assertIsString($row['id'] ?? null);
+            $rows[$row['id']] = $row;
+        }
+        self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($rows[self::player(self::ANN)] ?? [], 'teams'));
+        self::assertSame([self::team(self::RED) => 'keeper', self::team(self::BLUE) => 'bench'], $this->roles($rows[self::player(self::BOB)] ?? [], 'teams'));
+
+        self::assertCount(1, $seats, \implode("\n", $logger->statements()));
+        self::assertStringContainsString('partition by', $seats[0]);
+        self::assertStringContainsString('lower(', $seats[0]);
+        // The column itself is compared as stored, so an index on it serves the query.
+        self::assertStringNotContainsString('lower(p1_.playerid) in', $seats[0]);
     }
 
     #[Test]

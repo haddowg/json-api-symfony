@@ -2107,6 +2107,8 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $relatedClass = $this->entityClassFor($relatedType);
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $association = $this->pivotAssociation($relation, $parents[0], $relatedClass);
+        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
+        [$parentKeys, $parent] = $this->pivotParentScope($parentMetadata, $parents, 'pivot.' . $association->parentProperty);
 
         // Select the parent FK and the far FK as SCALARS (not the far entity object):
         // a "mixed" object result would DEDUP the far entity across rows under Doctrine's
@@ -2118,7 +2120,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $builder = $this->entityManager
             ->getRepository($association->entityClass)
             ->createQueryBuilder('pivot')
-            ->select(\sprintf('IDENTITY(pivot.%s) AS jsonapi_parent_id', $association->parentProperty))
+            ->select(\sprintf('%s AS jsonapi_parent_id', $parent))
             // The far member's own key, not the pivot's copy of it, which a
             // case-insensitive column may keep in another case.
             ->addSelect(\sprintf('%s AS jsonapi_far_id', DoctrineIdentifiers::path($relatedMetadata, 'far')))
@@ -2141,8 +2143,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $builder->addSelect(\sprintf('pivot.%s AS pivot_%s', $field->column() ?? $field->name(), $field->name()));
         }
 
-        $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
-        $this->ids->bindList($builder, 'jsonapi_parents', $parentMetadata, \array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents));
+        $this->ids->bindList($builder, 'jsonapi_parents', $parentMetadata, $parentKeys);
 
         return $this->pivotMapByParent(
             $this->pivotRows($builder),
@@ -2581,11 +2582,13 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $relatedMetadata = $this->entityManager->getClassMetadata($relatedClass);
         $parentMetadata = $this->entityManager->getClassMetadata($parents[0]::class);
 
+        [$parentKeys, $parent] = $this->pivotParentScope($parentMetadata, $parents, 'pivot.' . $association->parentProperty);
+
         $builder = $this->entityManager
             ->getRepository($relatedClass)
             ->createQueryBuilder(self::ROOT_ALIAS)
-            ->addSelect(\sprintf('IDENTITY(pivot.%s) AS %s', $association->parentProperty, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
-            ->addSelect(\sprintf('IDENTITY(pivot.%s) AS %s', $association->parentProperty, WindowedRelationBatch::ROW_KEY_ALIAS))
+            ->addSelect(\sprintf('%s AS %s', $parent, BatchScope::PARENT_DISCRIMINATOR_ALIAS))
+            ->addSelect(\sprintf('%s AS %s', $parent, WindowedRelationBatch::ROW_KEY_ALIAS))
             ->addSelect(\sprintf('%s AS %s', DoctrineIdentifiers::path($relatedMetadata, self::ROOT_ALIAS), BatchScope::RELATED_DISCRIMINATOR_ALIAS))
             ->innerJoin(
                 $association->entityClass,
@@ -2596,7 +2599,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parents)', $association->parentProperty))
             ->groupBy(BatchScope::PARENT_DISCRIMINATOR_ALIAS)
             ->addGroupBy(\sprintf('%s.%s', self::ROOT_ALIAS, $relatedMetadata->getSingleIdentifierFieldName()));
-        $this->ids->bindList($builder, 'jsonapi_parents', $parentMetadata, \array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents));
+        $this->ids->bindList($builder, 'jsonapi_parents', $parentMetadata, $parentKeys);
 
         foreach (PivotFields::storedFor($relation) as $field) {
             if ($field->isHidden()) {
@@ -2672,6 +2675,25 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
     }
 
     /**
+     * The keys to bind for `$parents` on the pivot's parent column at `$path`, each in
+     * every case a text column may keep a uuid-like key in, and the DQL a query reads that
+     * column by as each row's parent: lower-cased where those forms differ only in case,
+     * so one parent whose rows keep its key in both cases is one partition and one group.
+     *
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $parentMetadata
+     * @param list<object>                                $parents
+     *
+     * @return array{list<mixed>, string}
+     */
+    private function pivotParentScope(\Doctrine\ORM\Mapping\ClassMetadata $parentMetadata, array $parents, string $path): array
+    {
+        [$keys, $differ] = DoctrineIdentifiers::caseForms(\array_map(fn(object $parent): mixed => $this->ids->valueOf($parentMetadata, $parent), $parents));
+        $column = \sprintf('IDENTITY(%s)', $path);
+
+        return [$keys, $differ && $this->ids->storesAsText($this->ids->type($parentMetadata)) ? \sprintf('LOWER(%s)', $column) : $column];
+    }
+
+    /**
      * The EXISTING pivot meta for the parent's pivot relation — the validation
      * read-seam. It reuses the same association-entity projection the
      * relationship-linkage endpoint reads ({@see fetchRelatedPivotMap()}): one DQL
@@ -2733,11 +2755,11 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
                 'WITH',
                 DoctrineIdentifiers::joins('pivot.' . $association->farProperty, $relatedMetadata, self::ROOT_ALIAS),
             )
-            ->andWhere(\sprintf('pivot.%s = :jsonapi_parent', $association->parentProperty))
+            ->andWhere(\sprintf('pivot.%s IN (:jsonapi_parent)', $association->parentProperty))
             // One row per distinct far member — see the docblock (duplicate membership).
             ->groupBy(\sprintf('%s.%s', self::ROOT_ALIAS, $idField));
         $parentMetadata = $this->entityManager->getClassMetadata($parent::class);
-        $this->ids->bind($builder, 'jsonapi_parent', $parentMetadata, $this->ids->valueOf($parentMetadata, $parent));
+        $this->ids->bindList($builder, 'jsonapi_parent', $parentMetadata, DoctrineIdentifiers::caseForms([$this->ids->valueOf($parentMetadata, $parent)])[0]);
 
         foreach (PivotFields::storedFor($relation) as $field) {
             // A hidden pivot field (core hidden()) is never rendered in the pivot
