@@ -62,6 +62,7 @@ use haddowg\JsonApi\Resource\Filter\SupportsSingular;
 use haddowg\JsonApi\Resource\MetaContext;
 use haddowg\JsonApi\Resource\RequestMetaContext;
 use haddowg\JsonApi\Resource\ResolvesCompletionRedirect;
+use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Resource\Sort\RelationSorts;
 use haddowg\JsonApi\Resource\WrittenMeta;
 use haddowg\JsonApi\Response\AcceptedResponse;
@@ -143,6 +144,7 @@ use haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
+use haddowg\JsonApiBundle\Serializer\PivotSubstitutingResolver;
 use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipLinkage;
@@ -1057,12 +1059,16 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Materialize once so the related members can be both preloaded and
             // rendered. A polymorphic page is preloaded per member type.
             $items = \is_array($result->items) ? \array_values($result->items) : \iterator_to_array($result->items, false);
+            // The serializers a polymorphic page's members render through, keyed by type.
+            $members = $server;
             if ($polymorphic) {
                 // A polymorphic page spans types: each type counts its own members, and no
                 // `relatedQuery` path names a relation of all of them.
                 $this->windowBatcher?->refuse($request);
                 $this->preloadPolymorphic($relation, $items, $request, $server, $identifiedTypes ?? []);
-                $this->applyGroupedRelationshipCounts($server, $this->groupByRenderedType($relation, $items, $server, $identifiedTypes ?? []), $request);
+                $groups = $this->groupByRenderedType($relation, $items, $server, $identifiedTypes ?? []);
+                $this->applyGroupedRelationshipCounts($server, $groups, $request);
+                $members = $this->withGroupedPivotLinkage($server, $groups, $request);
             } else {
                 $this->windowRelatedItems($server, $relatedType, $items, $request);
                 $this->preloadIncludes($items, $relatedType, $request, $server);
@@ -1072,8 +1078,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $serializer = match (true) {
-                $identifiedTypes !== null => $this->identifiedSerializer($relation, $server, $identifiedTypes, $identifiedPivots),
-                $polymorphic => PolymorphicSerializer::forRelation($relation, $server),
+                $identifiedTypes !== null => $this->identifiedSerializer($relation, $members, $identifiedTypes, $identifiedPivots),
+                $polymorphic => PolymorphicSerializer::forRelation($relation, $members),
                 // Computed pivot fields need no stored row, so they render off the parent
                 // even where no pivot query ran.
                 PivotFields::hasComputed($relation) => new PivotMetaSerializer($this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
@@ -1282,20 +1288,20 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * @param array<int, string>               $types  each row's type, keyed by object id
      * @param array<int, array<string, mixed>> $pivots each row's `meta.pivot`, keyed by object id
      */
-    private function identifiedSerializer(RelationInterface $relation, Server $server, array $types, array $pivots = []): PolymorphicSerializer
+    private function identifiedSerializer(RelationInterface $relation, SerializerResolverInterface $resolver, array $types, array $pivots = []): PolymorphicSerializer
     {
         return new PolymorphicSerializer(
-            static function (mixed $object) use ($relation, $server, $types, $pivots): SerializerInterface {
+            static function (mixed $object) use ($relation, $resolver, $types, $pivots): SerializerInterface {
                 if (!\is_object($object) || !isset($types[\spl_object_id($object)])) {
                     throw new \LogicException(\sprintf('No stored pair of the "%s" relationship names a related object.', $relation->name()));
                 }
 
-                $serializer = $server->serializerFor($types[\spl_object_id($object)]);
+                $serializer = $resolver->serializerFor($types[\spl_object_id($object)]);
                 $pivot = $pivots[\spl_object_id($object)] ?? null;
 
                 return $pivot === null ? $serializer : new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivot]);
             },
-            PolymorphicSerializer::forRelation($relation, $server)->members(),
+            PolymorphicSerializer::forRelation($relation, $resolver)->members(),
         );
     }
 
@@ -2264,6 +2270,38 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return $this->pivotLinkageAt($server, $type, $items, $serializer, $request, '', $this->includeBatcher?->includedLevels() ?? []);
+    }
+
+    /**
+     * {@see withPivotLinkage()} for primary resources of several types, keyed by type: a
+     * resolver that renders each type through its pivot-aware serializer, or `$server`
+     * when no type needs one.
+     *
+     * @param array<string, list<object>> $groups
+     */
+    private function withGroupedPivotLinkage(Server $server, array $groups, JsonApiRequestInterface $request): SerializerResolverInterface
+    {
+        $levels = $this->includeBatcher?->includedLevels() ?? [];
+
+        $serializers = [];
+        foreach ($groups as $type => $members) {
+            if (!$server->hasSerializerFor($type)) {
+                continue;
+            }
+            $plain = $server->serializerFor($type);
+            $decorated = $this->pivotLinkageAt($server, $type, $members, $plain, $request, '', $levels);
+            if ($decorated !== $plain) {
+                $serializers[$type] = $decorated;
+            }
+        }
+
+        if ($serializers === []) {
+            return $server;
+        }
+
+        $type = \array_key_first($serializers);
+
+        return new PivotSubstitutingResolver($server, $type, $serializers[$type], $serializers);
     }
 
     /**

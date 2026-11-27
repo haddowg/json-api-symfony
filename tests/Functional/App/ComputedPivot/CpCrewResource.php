@@ -19,6 +19,8 @@ use haddowg\JsonApi\Resource\Field\Str;
  */
 class CpCrewResource extends AbstractResource
 {
+    use TypedByClass;
+
     public static string $type = 'cp-crews';
 
     public function fields(): array

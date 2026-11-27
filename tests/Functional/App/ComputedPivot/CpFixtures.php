@@ -13,7 +13,8 @@ use haddowg\JsonApiBundle\DataProvider\InMemorySnapshotCoordinator;
  * The seeded graph both kernels serve: three members, crew 1 ("Reds") with Ada and Linus,
  * crew 2 ("Blues") with Ada and Grace, and on Doctrine Ada's and Grace's shifts on crew 1's
  * staff and Linus's on crew 2's. Ships 1 and 3 sail with the Reds, ship 2 with the Blues,
- * and fleet 1 holds ships 1 and 2 with ship 3 as its flagship.
+ * and fleet 1 holds ships 1 and 2 with ship 3 as its flagship, and names ship 2 and crew 1
+ * as its vessels. Linus serves on ship 1, Ada and Grace on ship 2.
  */
 final class CpFixtures
 {
@@ -44,11 +45,12 @@ final class CpFixtures
         $blues = new CpCrew('2', 'Blues', [$ada, $grace]);
 
         $home = new CpFleet('1', 'Home');
-        $ark = new CpShip('1', 'Ark', $reds, $ada, $home);
-        $bark = new CpShip('2', 'Bark', $blues, $grace, $home);
+        $ark = new CpShip('1', 'Ark', $reds, $ada, $home, [$linus]);
+        $bark = new CpShip('2', 'Bark', $blues, $grace, $home, [$ada, $grace]);
         $cog = new CpShip('3', 'Cog', $reds);
         $home->ships = new ArrayCollection([$ark, $bark]);
         $home->flagship = $cog;
+        $home->vessels = [['cp-ships', '2'], ['cp-crews', '1']];
 
         return [
             'members' => ['1' => $ada, '2' => $grace, '3' => $linus],
@@ -99,7 +101,13 @@ final class CpFixtures
         return new InMemoryDataPersister(
             'cp-ships',
             $this->ships()->store(),
-            static fn(): CpShip => new CpShip(),
+            static function (): CpShip {
+                $ship = new CpShip();
+                // The in-memory persister writes a to-many as a plain list.
+                $ship->members = [];
+
+                return $ship;
+            },
             static fn(string $type, string $id): ?object => match ($type) {
                 'cp-crews' => $crews->store()->find($id),
                 'cp-members' => $members->store()->find($id),
@@ -142,6 +150,10 @@ final class CpFixtures
         foreach ($graph['crews'] as $id => $crew) {
             $crew->members = [...$crew->members];
             $crews[$id] = $crew;
+        }
+
+        foreach ($graph['ships'] as $ship) {
+            $ship->members = [...$ship->members];
         }
 
         $fleets = [];
