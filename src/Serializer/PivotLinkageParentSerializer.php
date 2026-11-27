@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\Internal\NonSparseMember;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
@@ -86,7 +87,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             // composes with any windowing/filtering for free). Empty when this parent
             // has no association rows.
             $map = $this->maps[$name] ?? null;
-            $mapForThisParent = $map[$parentWireId] ?? [];
+            $mapForThisParent = $map === null ? [] : $map[$parentWireId] ?? $this->comparableEntry($map, $parentWireId);
 
             // A member whose own relations render pivots further down renders through
             // the decorator for its include path.
@@ -126,5 +127,25 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
     protected function inner(): SerializerInterface
     {
         return $this->inner;
+    }
+
+    /**
+     * The entry of `$map` whose key is `$wireId` in another case, as a uuid-shaped id a
+     * provider keyed in capitals is.
+     *
+     * @param array<string, array<string, array<string, mixed>>> $map
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function comparableEntry(array $map, string $wireId): array
+    {
+        $wanted = StoredIdForms::comparable($wireId);
+        foreach ($map as $key => $entry) {
+            if (StoredIdForms::comparable($key) === $wanted) {
+                return $entry;
+            }
+        }
+
+        return [];
     }
 }

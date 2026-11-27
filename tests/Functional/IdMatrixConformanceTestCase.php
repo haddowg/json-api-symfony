@@ -197,6 +197,69 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
     }
 
     #[Test]
+    public function aMorphToIdentifiedByColumnsIsWrittenThroughEveryWrite(): void
+    {
+        $guid = ['type' => 'im-guid-owners', 'id' => IdMatrixSeed::wireId('guid', 1)];
+        $uuid = ['type' => 'im-uuid-owners', 'id' => IdMatrixSeed::wireId('uuid', 2)];
+        $prefix = ['type' => 'im-prefix-owners', 'id' => IdMatrixSeed::wireId('prefix', 1)];
+        $ref = fn(string $path): mixed => $this->relationship($this->fetch($path)['data'] ?? null, 'ref')['data'] ?? null;
+
+        $updated = $this->handle('/im-notes/4', 'PATCH', ['data' => ['type' => 'im-notes', 'id' => '4', 'relationships' => ['ref' => ['data' => $guid]]]]);
+        self::assertSame(200, $updated->getStatusCode(), (string) $updated->getContent());
+        self::assertSame($guid, $this->relationship($this->decode($updated)['data'] ?? null, 'ref')['data'] ?? null);
+        self::assertSame($guid, $ref('/im-notes/4'));
+        self::assertSame(['im-guid-owners:' . $guid['id']], $this->includedKeys($this->fetch('/im-notes/4?include=ref')));
+
+        $created = $this->handle('/im-notes', 'POST', ['data' => ['type' => 'im-notes', 'id' => '7', 'attributes' => ['title' => 'Seven'], 'relationships' => ['ref' => ['data' => $uuid]]]]);
+        self::assertSame(201, $created->getStatusCode(), (string) $created->getContent());
+        self::assertSame($uuid, $ref('/im-notes/7'));
+        self::assertSame(['7'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-uuid-owners&filter[ref][id]=' . $uuid['id'])['data'] ?? null));
+
+        $relinked = $this->handle('/im-notes/4/relationships/ref', 'PATCH', ['data' => $prefix]);
+        self::assertContains($relinked->getStatusCode(), [200, 204], (string) $relinked->getContent());
+        self::assertSame($prefix, $ref('/im-notes/4'));
+        self::assertContains('4', $this->ids($this->fetch($this->owner('prefix', 1) . '/refNotes')['data'] ?? null));
+
+        $cleared = $this->handle('/im-notes/4/relationships/ref', 'PATCH', ['data' => null]);
+        self::assertContains($cleared->getStatusCode(), [200, 204], (string) $cleared->getContent());
+        self::assertNull($ref('/im-notes/4'));
+    }
+
+    /**
+     * A guid owner whose key its store keeps in capitals, with note 5 naming it in capitals
+     * through both its foreign key and its polymorphic pair.
+     */
+    abstract protected function seedCapitalGuidOwner(): void;
+
+    public const string CAPITAL_GUID = '5F0C3B2D-1E00-4A4E-9C55-7A4E0000AAAA';
+
+    #[Test]
+    public function aGuidOwnerKeptInCapitalsKeepsItsIncludesAndCountsInLowerCase(): void
+    {
+        $this->seedCapitalGuidOwner();
+        $wire = \strtolower(self::CAPITAL_GUID);
+
+        foreach ([$wire, self::CAPITAL_GUID] as $id) {
+            $data = $this->fetch('/im-guid-owners/' . $id)['data'] ?? null;
+            self::assertIsArray($data);
+            self::assertSame($wire, $data['id'] ?? null);
+        }
+
+        $owners = $this->rowsById($this->fetch('/im-guid-owners?include=notes&withCount=notes', self::COUNTS_ACCEPT));
+        self::assertArrayHasKey($wire, $owners);
+        self::assertSame(['5'], $this->ids($this->relationship($owners[$wire], 'notes')['data'] ?? null));
+        self::assertSame(['total' => 1], $this->relationship($owners[$wire], 'notes')['meta'] ?? null);
+
+        self::assertSame(['5'], $this->ids($this->fetch('/im-guid-owners/' . $wire . '/notes')['data'] ?? null));
+        self::assertSame(['5'], $this->ids($this->fetch('/im-guid-owners/' . $wire . '/relationships/notes')['data'] ?? null));
+
+        $note = $this->fetch('/im-notes/5?include=ref');
+        self::assertSame(['type' => 'im-guid-owners', 'id' => $wire], $this->relationship($note['data'] ?? null, 'ref')['data'] ?? null);
+        self::assertSame(['im-guid-owners:' . $wire], $this->includedKeys($note));
+        self::assertSame(['5'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-guid-owners&filter[ref][id]=' . $wire)['data'] ?? null));
+    }
+
+    #[Test]
     public function aMorphManyMatchesAStoredIdInEitherForm(): void
     {
         $owner = $this->owner('prefix', 0);

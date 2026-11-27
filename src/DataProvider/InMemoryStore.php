@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
+
 /**
  * The mutable in-memory backing store shared by an {@see InMemoryDataProvider}
  * (reads) and an {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}
@@ -86,7 +88,7 @@ final class InMemoryStore
     {
         $highestNumericId = 0;
         foreach ($items as $id => $item) {
-            $id = (string) $id;
+            $id = StoredIdForms::comparable((string) $id);
             $this->itemsById[$id] = $item;
             if (\ctype_digit($id)) {
                 $highestNumericId = \max($highestNumericId, (int) $id);
@@ -124,9 +126,13 @@ final class InMemoryStore
         return \array_values($this->itemsById);
     }
 
+    /**
+     * The item with `$id`. Items are keyed by wire id, a uuid-like one in lower case, so
+     * either case finds it.
+     */
     public function find(string $id): ?object
     {
-        return $this->itemsById[$id] ?? null;
+        return $this->itemsById[StoredIdForms::comparable($id)] ?? null;
     }
 
     /**
@@ -142,7 +148,7 @@ final class InMemoryStore
         try {
             $id = ($this->identify)($item);
             if ($id !== '') {
-                return $id;
+                return StoredIdForms::comparable($id);
             }
         } catch (\LogicException) {
             // A read-only store has no identifier closure: fall through to the
@@ -165,12 +171,12 @@ final class InMemoryStore
             ($this->assignId)($item, $id);
         }
 
-        $this->itemsById[$id] = $item;
+        $this->itemsById[StoredIdForms::comparable($id)] = $item;
     }
 
     public function remove(object $item): void
     {
-        unset($this->itemsById[($this->identify)($item)]);
+        unset($this->itemsById[StoredIdForms::comparable(($this->identify)($item))]);
     }
 
     /**

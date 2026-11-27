@@ -531,6 +531,100 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         self::assertInstanceOf(UuidV7::class, Uuid::fromString($id));
     }
 
+    #[Test]
+    public function aNestedIncludeRendersThePivotAtEachLevel(): void
+    {
+        $response = $this->get('/campaign-templates/10?include=placeholders.templates');
+        $document = $this->decode($response);
+
+        self::assertSame([self::FIRST_NAME => 'Ann', self::LAST_NAME => null], $this->overrides($this->dataOf($response), 'placeholders'));
+        $definitions = $this->includedOf($document, 'placeholder-definitions');
+        self::assertSame(['10' => 'Ann', '20' => 'Bob'], $this->overrides($definitions[self::FIRST_NAME] ?? [], 'templates'));
+        self::assertSame(['10' => null], $this->overrides($definitions[self::LAST_NAME] ?? [], 'templates'));
+
+        $templates = $this->includedOf($this->decode($this->get('/placeholder-definitions/' . self::FIRST_NAME . '?include=templates.placeholders')), 'campaign-templates');
+        self::assertSame([self::FIRST_NAME => 'Ann', self::LAST_NAME => null], $this->overrides($templates['10'] ?? [], 'placeholders'));
+        self::assertSame([self::FIRST_NAME => 'Bob', self::COMPANY => 'Acme'], $this->overrides($templates['20'] ?? [], 'placeholders'));
+    }
+
+    #[Test]
+    public function aRelatedEndpointIncludeRendersItsMembersPivots(): void
+    {
+        $rows = $this->rows($this->decode($this->get('/placeholder-definitions/' . self::FIRST_NAME . '/templates?sort=name&include=placeholders')));
+
+        self::assertSame([self::FIRST_NAME => 'Ann', self::LAST_NAME => null], $this->overrides($rows[0], 'placeholders'));
+        self::assertSame([self::FIRST_NAME => 'Bob', self::COMPANY => 'Acme'], $this->overrides($rows[1], 'placeholders'));
+    }
+
+    #[Test]
+    public function aWriteResponseIncludeRendersThePivotAtEachLevel(): void
+    {
+        $response = $this->handle('/campaign-templates/10?include=placeholders.templates', 'PATCH', ['data' => [
+            'type' => 'campaign-templates',
+            'id' => '10',
+            'attributes' => ['name' => 'alpha-2'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        /** @var array<string, mixed> $data */
+        self::assertSame([self::FIRST_NAME => 'Ann', self::LAST_NAME => null], $this->overrides($data, 'placeholders'));
+        self::assertSame(['10' => 'Ann', '20' => 'Bob'], $this->overrides($this->includedOf($document, 'placeholder-definitions')[self::FIRST_NAME] ?? [], 'templates'));
+    }
+
+    /**
+     * The `defaultOverride` on each identifier of `$relation`'s linkage, keyed by id.
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return array<string, mixed>
+     */
+    private function overrides(array $resource, string $relation): array
+    {
+        $overrides = [];
+        $linkage = $this->linkage($resource, $relation);
+        self::assertIsArray($linkage);
+        foreach ($linkage as $identifier) {
+            self::assertIsArray($identifier);
+            self::assertIsString($identifier['id'] ?? null);
+            $meta = $identifier['meta'] ?? null;
+            self::assertIsArray($meta, \sprintf('%s carries meta', $identifier['id']));
+            $pivot = $meta['pivot'] ?? null;
+            self::assertIsArray($pivot, \sprintf('%s carries meta.pivot', $identifier['id']));
+            $overrides[$identifier['id']] = $pivot['defaultOverride'] ?? null;
+        }
+        \ksort($overrides);
+
+        return $overrides;
+    }
+
+    /**
+     * The included resources of `$type`, keyed by id.
+     *
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function includedOf(array $document, string $type): array
+    {
+        $included = $document['included'] ?? [];
+        self::assertIsArray($included);
+
+        $byId = [];
+        foreach ($included as $resource) {
+            self::assertIsArray($resource);
+            $id = $resource['id'] ?? null;
+            if (($resource['type'] ?? null) === $type && \is_string($id)) {
+                /** @var array<string, mixed> $resource */
+                $byId[$id] = $resource;
+            }
+        }
+
+        return $byId;
+    }
+
     /**
      * @return list<PkTemplatePlaceholderEntity>
      */

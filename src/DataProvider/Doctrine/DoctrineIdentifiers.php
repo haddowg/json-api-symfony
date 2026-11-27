@@ -12,11 +12,14 @@ use Doctrine\DBAL\Types\ConversionException;
 use Doctrine\DBAL\Types\GuidType;
 use Doctrine\DBAL\Types\IntegerType;
 use Doctrine\DBAL\Types\SmallIntType;
+use Doctrine\DBAL\Types\StringType;
+use Doctrine\DBAL\Types\TextType;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\QueryBuilder;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 
 /**
  * Converts and binds single-field entity identifiers through their mapped Doctrine
@@ -142,7 +145,8 @@ final class DoctrineIdentifiers
             return $encoder->encode($php);
         }
 
-        return \is_scalar($php) || $php instanceof \Stringable ? (string) $php : null;
+        // A uuid-shaped key renders in lower case, as the Id field renders it.
+        return \is_scalar($php) || $php instanceof \Stringable ? StoredIdForms::comparable($php instanceof \Stringable ? $php : (string) $php) : null;
     }
 
     /**
@@ -435,6 +439,44 @@ final class DoctrineIdentifiers
         }
 
         return $database;
+    }
+
+    /**
+     * Each of `$keys` once for every case a text column may keep a uuid-like key in
+     * ({@see StoredIdForms::forms()}), so a lookup matches either case and an index on the
+     * column still serves it, and whether any key has a second case.
+     *
+     * @param iterable<mixed> $keys
+     *
+     * @return array{list<mixed>, bool}
+     */
+    public static function caseForms(iterable $keys): array
+    {
+        $forms = [];
+        $differ = false;
+        foreach ($keys as $key) {
+            $keyForms = StoredIdForms::forms(null, [$key]);
+            $differ = $differ || \count($keyForms) > 1;
+            \array_push($forms, ...$keyForms);
+        }
+
+        return [$forms, $differ];
+    }
+
+    /**
+     * Whether a value of `$type` is stored as text, so `LOWER()` reads it: a string type,
+     * or a `guid` on a platform with no native uuid column.
+     */
+    public function storesAsText(?Type $type): bool
+    {
+        // A guid is a string type, but a native uuid column has no LOWER().
+        if ($type instanceof GuidType) {
+            $platform = $this->entityManager->getConnection()->getDatabasePlatform();
+
+            return $platform->getGuidTypeDeclarationSQL([]) === $platform->getStringTypeDeclarationSQL(['fixed' => true, 'length' => 36]);
+        }
+
+        return $type instanceof StringType || $type instanceof TextType;
     }
 
     /**

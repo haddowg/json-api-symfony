@@ -21,7 +21,7 @@ class ImNote
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'integer')]
-        public int $id,
+        public int|string $id,
         #[ORM\Column(type: 'string')]
         public string $title = '',
         #[ORM\Column(type: 'integer', nullable: true)]

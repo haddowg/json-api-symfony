@@ -40,6 +40,7 @@ final class ForeignKeyScope
      * @param array<string, string>  $wireIdOf    each parent's key, in database form as a string, mapped to its wire id
      * @param list<mixed>            $bound       the parents' keys in their database form
      * @param bool                   $oneFormEach whether each parent's keys differ only in letter case, so a lower-cased column partitions the rows by parent
+     * @param bool                   $caseForms   whether a parent's key is bound in two cases, so the column partitions lower-cased
      */
     private function __construct(
         private readonly DoctrineIdentifiers $ids,
@@ -51,6 +52,7 @@ final class ForeignKeyScope
         private readonly array $wireIdOf,
         private readonly array $bound,
         private readonly bool $oneFormEach = true,
+        private readonly bool $caseForms = false,
     ) {}
 
     /**
@@ -68,14 +70,16 @@ final class ForeignKeyScope
         $bound = [];
         $seen = [];
         $oneFormEach = true;
+        $caseForms = false;
         if ($typeColumn === null || $storedTypes !== []) {
             foreach ($parents->keys as $wireId => $key) {
-                // A polymorphic id column may hold the storage key or the wire id, a uuid in either case.
-                $forms = $typeColumn === null ? [$key] : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
+                // A polymorphic id column may hold the storage key or the wire id, and any
+                // text column a uuid-like key in either case.
+                $forms = $typeColumn === null ? StoredIdForms::forms(null, [$key]) : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
                 $parentForms = [];
                 foreach ($forms as $form) {
                     $database = $ids->fieldToDatabase($relatedMetadata, $column, $form);
-                    $exact = self::normalise($database);
+                    $exact = \is_scalar($database) || $database instanceof \Stringable ? (string) $database : null;
                     if ($exact === null || isset($seen[$exact])) {
                         continue;
                     }
@@ -87,10 +91,11 @@ final class ForeignKeyScope
                     $bound[] = $database;
                 }
                 $oneFormEach = $oneFormEach && \count($parentForms) <= 1;
+                $caseForms = $caseForms || ($typeColumn === null && \count($forms) > 1);
             }
         }
 
-        return new self($ids, $relatedMetadata, $column, $typeColumn, $storedTypes, $parents, $wireIdOf, $bound, $oneFormEach);
+        return new self($ids, $relatedMetadata, $column, $typeColumn, $storedTypes, $parents, $wireIdOf, $bound, $oneFormEach, $caseForms);
     }
 
     /**
@@ -221,7 +226,7 @@ final class ForeignKeyScope
             }
         }
 
-        return new self($this->ids, $this->related, $this->column, $this->typeColumn, $this->storedTypes, $parents, $wireIdOf, $bound, $this->oneFormEach);
+        return new self($this->ids, $this->related, $this->column, $this->typeColumn, $this->storedTypes, $parents, $wireIdOf, $bound, $this->oneFormEach, $this->caseForms);
     }
 
     /**
@@ -242,8 +247,8 @@ final class ForeignKeyScope
 
     /**
      * The DQL a query selects, partitions and groups the rows by as their parent: the
-     * foreign key, lower-cased for a polymorphic id kept as text, since such a column may
-     * keep one parent's key in either case. It is never compared in a WHERE, so an index on
+     * foreign key, lower-cased for a polymorphic id kept as text or a uuid-like key bound
+     * in both cases, since such a column may keep one parent's key in either case. It is never compared in a WHERE, so an index on
      * the column still serves the scope.
      */
     public function discriminator(string $alias): string
@@ -253,13 +258,16 @@ final class ForeignKeyScope
 
     /**
      * Whether the discriminator lower-cases the column: a polymorphic id kept in a text
-     * field.
+     * field, or a key kept as text whose forms differ only in case.
      */
     private function lowersColumn(): bool
     {
-        return $this->typeColumn !== null
-            && $this->related->hasField($this->column)
-            && \in_array($this->related->getTypeOfField($this->column), self::TEXT_TYPES, true);
+        if ($this->typeColumn !== null) {
+            return $this->related->hasField($this->column)
+                && \in_array($this->related->getTypeOfField($this->column), self::TEXT_TYPES, true);
+        }
+
+        return $this->caseForms && $this->ids->storesAsText($this->ids->fieldType($this->related, $this->column));
     }
 
     /**
@@ -324,7 +332,8 @@ final class ForeignKeyScope
 
     /**
      * A database value as the string it is keyed by: a polymorphic id in lower case, since
-     * its column may keep a key in either case, any other key exactly.
+     * its column may keep a key in either case, a uuid-like key in lower case, and any
+     * other key exactly.
      */
     private static function normalise(mixed $value, bool $polymorphic = false): ?string
     {
@@ -332,6 +341,6 @@ final class ForeignKeyScope
             return null;
         }
 
-        return $polymorphic ? \strtolower((string) $value) : (string) $value;
+        return $polymorphic ? \strtolower((string) $value) : StoredIdForms::comparable(\is_bool($value) || \is_float($value) ? (string) $value : $value);
     }
 }

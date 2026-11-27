@@ -14,9 +14,11 @@ use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
 use haddowg\JsonApi\Resource\Field\Accessor;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Mode;
+use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataProvider\InMemoryStore;
 use haddowg\JsonApiBundle\Validation\RelationshipTypeUnacceptable;
@@ -185,7 +187,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
 
         return match (true) {
             $name === 'int' && \is_string($key) && \preg_match('/^-?\d+$/', $key) === 1 => (int) $key,
-            $name === 'string' && \is_int($key) => (string) $key,
+            $name === 'string' && (\is_int($key) || $key instanceof \Stringable) => (string) $key,
             !$type->isBuiltin() && !$key instanceof $name && (\is_string($key) || $key instanceof \Stringable) && \method_exists($name, 'fromString') => $name::fromString((string) $key),
             default => $key,
         };
@@ -201,7 +203,15 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
     ): object {
         $property = $relation->column() ?? $relation->name();
 
-        if ($linkage instanceof ToOneRelationship) {
+        $columns = $relation instanceof MorphTo ? $relation->identifierColumns() : null;
+        if ($linkage instanceof ToOneRelationship && $columns !== null) {
+            // A MorphTo identified by columns stores the target's type and key, not the target.
+            $identifier = $linkage->resourceIdentifier;
+            $type = $identifier?->id !== null ? $this->relatedTypeOf($relation, $identifier) : null;
+            $related = $type !== null && $identifier?->id !== null ? $this->resolveRelated($type, $identifier->id) : null;
+            Accessor::set($entity, $columns->type, $type === null ? null : $columns->storedValueFor($type));
+            Accessor::set($entity, $columns->id, $type === null ? null : self::storable($entity, $columns->id, $related !== null && \property_exists($related, 'id') ? $related->id : $identifier?->id));
+        } elseif ($linkage instanceof ToOneRelationship) {
             // Replace (or, when the linkage is empty, clear) the to-one reference.
             $identifier = $linkage->resourceIdentifier;
             $entity->{$property} = $identifier?->id !== null
@@ -400,7 +410,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         $incoming = [];
         foreach ($linkage->resourceIdentifiers as $identifier) {
             if ($identifier->id !== null) {
-                $incoming[$identifier->id] = $this->relatedTypeOf($relation, $identifier);
+                $incoming[StoredIdForms::comparable($identifier->id)] = $this->relatedTypeOf($relation, $identifier);
             }
         }
         $incomingIds = \array_map('strval', \array_keys($incoming));
@@ -492,6 +502,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
         /** @var mixed $id */
         $id = $member->id ?? null;
 
-        return \is_scalar($id) ? (string) $id : \spl_object_hash($member);
+        // A uuid-like id compares in lower case, as the linkage naming it is.
+        return \is_int($id) || \is_string($id) || $id instanceof \Stringable ? StoredIdForms::comparable($id) : (\is_scalar($id) ? (string) $id : \spl_object_hash($member));
     }
 }

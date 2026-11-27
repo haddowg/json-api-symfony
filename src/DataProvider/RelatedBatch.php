@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\DataProvider;
 
 use haddowg\JsonApi\Collection\CollectionResult;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 
 /**
  * The result of a batched related-collection fetch: one relation's windowed page
@@ -33,6 +34,11 @@ use haddowg\JsonApi\Collection\CollectionResult;
 final readonly class RelatedBatch
 {
     /**
+     * @var array<string, CollectionResult<object>>
+     */
+    private array $resultsByParentWireId;
+
+    /**
      * @param array<int|string, CollectionResult<object>> $resultsByParentWireId the per-parent windowed page,
      *                                                                            keyed by parent wire id (an
      *                                                                            integer-PK wire id is a numeric
@@ -42,10 +48,17 @@ final readonly class RelatedBatch
      *                                                                            the lookup against a string wire id)
      */
     public function __construct(
-        private array $resultsByParentWireId,
+        array $resultsByParentWireId,
         private bool $supported = true,
         private bool $computed = false,
-    ) {}
+    ) {
+        // A uuid-shaped wire id matches whatever case the provider keyed it in.
+        $keyed = [];
+        foreach ($resultsByParentWireId as $wireId => $result) {
+            $keyed[StoredIdForms::comparable($wireId)] = $result;
+        }
+        $this->resultsByParentWireId = $keyed;
+    }
 
     /**
      * A batch for a relation that is not backed by anything the provider loads: its
@@ -92,7 +105,7 @@ final readonly class RelatedBatch
      */
     public function has(string $parentWireId): bool
     {
-        return isset($this->resultsByParentWireId[$parentWireId]);
+        return isset($this->resultsByParentWireId[StoredIdForms::comparable($parentWireId)]);
     }
 
     /**
@@ -107,6 +120,6 @@ final readonly class RelatedBatch
      */
     public function for(string $parentWireId): CollectionResult
     {
-        return $this->resultsByParentWireId[$parentWireId] ?? new CollectionResult([]);
+        return $this->resultsByParentWireId[StoredIdForms::comparable($parentWireId)] ?? new CollectionResult([]);
     }
 }
