@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Serializer;
 
+use haddowg\JsonApi\Exception\NoResourceRegistered;
+use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\DeclaresRelatedOnlyTypesInterface;
 use haddowg\JsonApi\Resource\DeclaresSingletonTypesInterface;
 use haddowg\JsonApi\Resource\ProvidesOutputTimezoneInterface;
 use haddowg\JsonApi\Resource\ProvidesRelationAuthorizerInterface;
+use haddowg\JsonApi\Resource\ProvidesResourcesInterface;
 use haddowg\JsonApi\Resource\ProvidesStorageCastInterface;
 use haddowg\JsonApi\Resource\RejectsReadOnlyAttributesInterface;
 use haddowg\JsonApi\Resource\RelationAuthorizerInterface;
@@ -24,7 +27,9 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
 /**
  * A {@see SerializerResolverInterface} decorator that substitutes one type's
  * serializer for a {@see PivotMetaSerializer}, delegating every other resolution to
- * the inner resolver (the {@see \haddowg\JsonApi\Server\Server}).
+ * the inner resolver (the {@see \haddowg\JsonApi\Server\Server}). It can substitute
+ * further types too, which is how a relation reached through a nested include renders
+ * its related resources through serializers that rebind their own pivot relations.
  *
  * Used to render pivot meta on the **relationship-linkage** endpoint
  * (`GET /{type}/{id}/relationships/{rel}`): that endpoint renders the parent's
@@ -35,27 +40,31 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * its `meta.pivot` — riding core's existing identifier-meta render path with no core
  * change.
  *
- * It passes the inner resolver's output timezone, relation authorizer, read-only
- * attribute rejection, related-only types and singleton types through, so the linkage it
+ * It passes the inner resolver's registered resources, output timezone, relation
+ * authorizer, read-only attribute rejection, related-only types and singleton types through, so the linkage it
  * builds renders in the server's zone, is withheld from a caller the relation's read
  * expression refuses, and a resource it resolves keeps its server's write rules and links.
  */
-final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, ProvidesStorageCastInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
+final class PivotSubstitutingResolver implements SerializerResolverInterface, ProvidesResourcesInterface, ProvidesOutputTimezoneInterface, ProvidesRelationAuthorizerInterface, ProvidesStorageCastInterface, RejectsReadOnlyAttributesInterface, DeclaresRelatedOnlyTypesInterface, DeclaresSingletonTypesInterface
 {
+    /**
+     * @param array<string, SerializerInterface> $substitutes the serializers of further types to substitute, keyed by type
+     */
     public function __construct(
         private readonly SerializerResolverInterface $inner,
         private readonly string $type,
-        private readonly PivotMetaSerializer $pivotSerializer,
+        private readonly SerializerInterface $pivotSerializer,
+        private readonly array $substitutes = [],
     ) {}
 
     public function serializerFor(string $type): SerializerInterface
     {
-        return $type === $this->type ? $this->pivotSerializer : $this->inner->serializerFor($type);
+        return $type === $this->type ? $this->pivotSerializer : $this->substitutes[$type] ?? $this->inner->serializerFor($type);
     }
 
     public function hasSerializerFor(string $type): bool
     {
-        return $type === $this->type ? true : $this->inner->hasSerializerFor($type);
+        return $type === $this->type || isset($this->substitutes[$type]) || $this->inner->hasSerializerFor($type);
     }
 
     public function relationshipLoadState(): ?RelationshipLoadStateInterface
@@ -81,6 +90,20 @@ final class PivotSubstitutingResolver implements SerializerResolverInterface, Pr
     public function resourceLinkContributor(): ?ResourceLinkContributorInterface
     {
         return $this->inner->resourceLinkContributor();
+    }
+
+    public function hasResourceFor(string $type): bool
+    {
+        return $this->inner instanceof ProvidesResourcesInterface && $this->inner->hasResourceFor($type);
+    }
+
+    public function resourceFor(string $type): AbstractResource
+    {
+        if (!$this->inner instanceof ProvidesResourcesInterface) {
+            throw new NoResourceRegistered($type);
+        }
+
+        return $this->inner->resourceFor($type);
     }
 
     public function outputTimezone(): ?string

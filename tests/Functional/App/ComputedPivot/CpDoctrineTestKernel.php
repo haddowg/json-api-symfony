@@ -5,20 +5,23 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\ComputedPivot;
 
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
+use Doctrine\DBAL\Logging\Middleware as DbalLoggingMiddleware;
 use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\PinnedConfigDefaults;
+use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ServicesConfigurator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
- * Serves `cp-crews` and `cp-members` over Doctrine, with Atomic
+ * Serves `cp-crews`, `cp-members`, `cp-ships` and `cp-fleets` over Doctrine, with Atomic
  * Operations enabled.
  */
 class CpDoctrineTestKernel extends Kernel
@@ -83,6 +86,7 @@ class CpDoctrineTestKernel extends Kernel
 
         $services = $container->services();
         $services->defaults()->autowire()->autoconfigure();
+        $services->set(CommendMember::class);
 
         $this->configureData($container, $services);
     }
@@ -111,8 +115,16 @@ class CpDoctrineTestKernel extends Kernel
             'orm' => $orm,
         ]);
 
+        // Public so a test reads back the statements a request ran.
+        $services->set(QueryCountingLogger::class)->public();
+        $services->set(DbalLoggingMiddleware::class)
+            ->args([new Reference(QueryCountingLogger::class)])
+            ->tag('doctrine.middleware');
+
         $services->set(DoctrineCpCrewResource::class);
         $services->set(DoctrineCpMemberResource::class);
+        $services->set(DoctrineCpShipResource::class);
+        $services->set(DoctrineCpFleetResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

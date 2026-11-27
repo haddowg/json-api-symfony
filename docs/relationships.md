@@ -971,6 +971,20 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 > [computed pivot field](#computed-pivot-fields) needs no storage, so both providers
 > render it, on an all-computed and a mixed relation alike.
 
+The same holds wherever the parent renders, not only as the primary resource. A pivot
+relation reached through a nested include (`GET /users/1?include=playlists.tracks`, at
+any depth) carries `meta.pivot` on its linkage and on its included members, and so does
+one included from a related endpoint (`GET /users/1/playlists?include=tracks`), a
+`MorphToMany` related endpoint among them, or in the response to a create or update
+that names `?include`. The pivot map is read once per
+include path for every parent at it, never once per parent.
+
+An included member is one resource object, so when two parents link to the same member
+with different pivot values, its `meta.pivot` in `included` holds one of them, and a
+member also reached through a path with no pivot may render without one. Each parent's
+linkage always carries that parent's own values, so read per-link pivot data from the
+linkage.
+
 Each member's `meta.pivot` carries the pivot fields core's
 `BelongsToMany::readablePivotFieldsFor($request, $member)` returns: those neither
 hidden nor write-only for the request. A `hidden(when:)` predicate on a pivot field

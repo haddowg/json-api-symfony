@@ -6,7 +6,9 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Internal\NonSparseMember;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
+use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
@@ -31,6 +33,11 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * Keying the per-parent map by member id means it composes with any windowing or
  * filtering core applies to the linkage: the {@see PivotMetaSerializer} looks up only
  * the members it actually renders and ignores the rest.
+ *
+ * The same decorator renders an included resource's relations, one per include path:
+ * a relation in `$nested` renders its related resources through the serializers given
+ * for their types, each itself a decorator for the next path down, so a pivot relation
+ * reached through a nested include (`?include=crew.members`) carries its pivot too.
  */
 final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
 {
@@ -40,6 +47,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
      * @param array<string, RelationInterface> $relations the pivot relations to rebind, keyed by relation name
      * @param array<string, array<string, array<string, array<string, mixed>>>|null> $maps the batched per-parent pivot maps, `relationName => parentWireId => memberId => [field => value]`, `null` for a relation with no pivot storage, which renders its computed fields only
      * @param string|null                      $outputTimezone the server's default output zone a computed pivot date field adopts
+     * @param array<string, array{relation: RelationInterface, serializers: non-empty-array<string, SerializerInterface>}> $nested the included relations whose related resources render through their own decorators, keyed by relation name, with those decorators keyed by related type
      */
     public function __construct(
         private readonly SerializerInterface $inner,
@@ -47,6 +55,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
         private readonly array $relations,
         private readonly array $maps,
         private readonly ?string $outputTimezone = null,
+        private readonly array $nested = [],
     ) {}
 
     public function getRelationships(mixed $object, JsonApiRequestInterface $request): array
@@ -79,14 +88,39 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             $map = $this->maps[$name] ?? null;
             $mapForThisParent = $map[$parentWireId] ?? [];
 
-            $relationships[$name] = $this->pivotLinkageBuilder(
+            // A member whose own relations render pivots further down renders through
+            // the decorator for its include path.
+            $related = $this->nested[$name]['serializers'][$relatedType] ?? $this->resolver->serializerFor($relatedType);
+
+            $relationships[$name] = self::rebound($relationships[$name], $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($this->resolver->serializerFor($relatedType), $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null),
-            );
+                new PivotMetaSerializer($related, $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null),
+            ));
+        }
+
+        foreach ($this->nested as $name => $nested) {
+            if (isset($this->relations[$name]) || !\array_key_exists($name, $relationships)) {
+                continue;
+            }
+
+            $relationships[$name] = self::rebound($relationships[$name], $this->reboundBuilder($nested['relation'], $this->resolver, $nested['serializers']));
         }
 
         return $relationships;
+    }
+
+    /**
+     * `$build` in place of the inner serializer's `$callable`, still rendered whatever
+     * `fields[type]` lists when the relation is declared `notSparseField()`.
+     *
+     * @param \Closure(mixed, JsonApiRequestInterface, string): AbstractRelationship $build
+     *
+     * @return callable(mixed, JsonApiRequestInterface, string): AbstractRelationship
+     */
+    private static function rebound(mixed $callable, \Closure $build): callable
+    {
+        return $callable instanceof NonSparseMember ? new NonSparseMember($build) : $build;
     }
 
     protected function inner(): SerializerInterface

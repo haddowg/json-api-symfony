@@ -9,12 +9,17 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\ResourceMeta;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
-use haddowg\JsonApi\Resource\SerializerResolverInterface;
-use haddowg\JsonApi\Schema\Link\ResourceLinks;
+use haddowg\JsonApi\Serializer\CountableControlsInterface;
+use haddowg\JsonApi\Serializer\CountableSelfInterface;
+use haddowg\JsonApi\Serializer\DeclaresEagerLoadsInterface;
+use haddowg\JsonApi\Serializer\DeclaresFieldNamesInterface;
+use haddowg\JsonApi\Serializer\DeclaresRelationsInterface;
 use haddowg\JsonApi\Serializer\IncludeControlsInterface;
 use haddowg\JsonApi\Serializer\RendersDeclaredLinksInterface;
 use haddowg\JsonApi\Serializer\RendersResourceMetaInterface;
+use haddowg\JsonApi\Serializer\SelfLinkAwareInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApi\Serializer\SerializesNestedFieldsetsInterface;
 use haddowg\JsonApi\Serializer\UriTypeAwareInterface;
 use haddowg\JsonApiBundle\DataProvider\PivotFields;
 
@@ -37,7 +42,9 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  *
  * The `pivot` key keeps the values namespaced so they never collide with the
  * member resource's own meta, and so a client can tell pivot data from intrinsic
- * meta.
+ * meta. Every other optional serializer interface forwards to the related serializer
+ * through {@see ForwardsSerializerInterfaces}, so a member keeps its links, URI type,
+ * self-link toggle and counts.
  *
  * Given the relation, it renders the fields core's
  * {@see BelongsToMany::readablePivotFieldsFor()} returns for the request and the member
@@ -57,8 +64,23 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * computed fields, evaluated with no stored values, and never a stored field, so a
  * computed field renders the same on every provider.
  */
-final class PivotMetaSerializer implements SerializerInterface, IncludeControlsInterface, RendersDeclaredLinksInterface, UriTypeAwareInterface, SerializerResolverAwareInterface, RendersResourceMetaInterface
+final class PivotMetaSerializer implements
+    SerializerInterface,
+    IncludeControlsInterface,
+    CountableControlsInterface,
+    CountableSelfInterface,
+    DeclaresFieldNamesInterface,
+    DeclaresEagerLoadsInterface,
+    DeclaresRelationsInterface,
+    SelfLinkAwareInterface,
+    RendersDeclaredLinksInterface,
+    UriTypeAwareInterface,
+    SerializerResolverAwareInterface,
+    RendersResourceMetaInterface,
+    SerializesNestedFieldsetsInterface
 {
+    use ForwardsSerializerInterfaces;
+
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
      * @param array<string, array<string, mixed>>  $pivotMap `memberId => [pivotField => typed value]`
@@ -75,16 +97,6 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
         private readonly ?string $outputTimezone = null,
         private readonly bool $computedOnly = false,
     ) {}
-
-    public function getType(mixed $object): string
-    {
-        return $this->inner->getType($object);
-    }
-
-    public function getId(mixed $object): string
-    {
-        return $this->inner->getId($object);
-    }
 
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
     {
@@ -183,79 +195,13 @@ final class PivotMetaSerializer implements SerializerInterface, IncludeControlsI
         return $readable;
     }
 
-    public function getLinks(mixed $object, JsonApiRequestInterface $request): ?ResourceLinks
-    {
-        return $this->inner->getLinks($object, $request);
-    }
-
-    public function renderDeclaredLinks(mixed $object, JsonApiRequestInterface $request): array
-    {
-        return $this->inner instanceof RendersDeclaredLinksInterface
-            ? $this->inner->renderDeclaredLinks($object, $request)
-            : [];
-    }
-
-    public function getAttributes(mixed $object, JsonApiRequestInterface $request): array
-    {
-        return $this->inner->getAttributes($object, $request);
-    }
-
-    public function getDefaultIncludedRelationships(mixed $object): array
-    {
-        return $this->inner->getDefaultIncludedRelationships($object);
-    }
-
     public function getRelationships(mixed $object, JsonApiRequestInterface $request): array
     {
         return $this->inner->getRelationships($object, $request);
     }
 
-    public function getNonIncludableRelationships(JsonApiRequestInterface $request, mixed $object): array
+    protected function inner(): SerializerInterface
     {
-        return $this->inner instanceof IncludeControlsInterface
-            ? $this->inner->getNonIncludableRelationships($request, $object)
-            : [];
-    }
-
-    public function maxIncludeDepth(): ?int
-    {
-        return $this->inner instanceof IncludeControlsInterface
-            ? $this->inner->maxIncludeDepth()
-            : null;
-    }
-
-    public function getAllowedIncludePaths(): ?array
-    {
-        return $this->inner instanceof IncludeControlsInterface
-            ? $this->inner->getAllowedIncludePaths()
-            : null;
-    }
-
-    public function getExcludedIncludePaths(): array
-    {
-        return $this->inner instanceof IncludeControlsInterface
-            ? $this->inner->getExcludedIncludePaths()
-            : [];
-    }
-
-    /**
-     * The related serializer's URI segment, so each member's links use it.
-     */
-    public function uriType(): string
-    {
-        return $this->inner instanceof UriTypeAwareInterface ? $this->inner->uriType() : '';
-    }
-
-    /**
-     * Left to the related serializer, which the server already gave its resolver.
-     */
-    public function setSerializerResolver(SerializerResolverInterface $resolver): void {}
-
-    /**
-     * The related serializer's resolver, so a singleton member's links drop its id.
-     */
-    public function serializerResolver(): ?SerializerResolverInterface
-    {
-        return $this->inner instanceof SerializerResolverAwareInterface ? $this->inner->serializerResolver() : null;
+        return $this->inner;
     }
 }

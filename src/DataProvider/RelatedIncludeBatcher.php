@@ -150,6 +150,14 @@ final class RelatedIncludeBatcher
      */
     private array $pages = [];
 
+    /**
+     * The resources the last {@see preload()} walked below the primary level, keyed by
+     * include path then type.
+     *
+     * @var array<string, array<string, list<object>>>
+     */
+    private array $levels = [];
+
     private readonly RelationshipWindowBatcher $windows;
 
     public function __construct(
@@ -171,6 +179,18 @@ final class RelatedIncludeBatcher
     public function pagination(): ?WindowedRelationshipPagination
     {
         return $this->pages === [] ? null : new WindowedRelationshipPagination($this->pages);
+    }
+
+    /**
+     * The resources the last {@see preload()} walked below the primary level, keyed by
+     * include path (`crew`, `ships.crew`) then the type they render as. They are the
+     * parents whose relations an included resource renders at that path.
+     *
+     * @return array<string, array<string, list<object>>>
+     */
+    public function includedLevels(): array
+    {
+        return $this->levels;
     }
 
     /**
@@ -233,6 +253,7 @@ final class RelatedIncludeBatcher
         $this->typeOf = [];
         $this->shared = [];
         $this->pages = [];
+        $this->levels = [];
         $this->windows->forget();
         foreach ($entitiesByType as $entities) {
             $this->remember($entities);
@@ -326,6 +347,7 @@ final class RelatedIncludeBatcher
         $this->typeOf = [];
         $this->shared = [];
         $this->pages = [];
+        $this->levels = [];
         $this->windowed = null;
     }
 
@@ -358,6 +380,10 @@ final class RelatedIncludeBatcher
         if ($entities === [] || !$server->hasSerializerFor($type)) {
             // A type the server cannot serialize renders no relationships at all.
             return;
+        }
+
+        if ($basePath !== '') {
+            $this->levels[$basePath][$type] = $this->unique([...$this->levels[$basePath][$type] ?? [], ...$entities]);
         }
 
         $serializer = $server->serializerFor($type);
