@@ -27,6 +27,7 @@ use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\Positions;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\Field\Union;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
 use haddowg\JsonApiBundle\DataPersister\BuildsPivotRowsInterface;
@@ -825,7 +826,7 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
                 continue;
             }
 
-            $member = $this->entityManager->find($relatedClass, $this->decodeLinkageId($relatedType, $identifier->id));
+            $member = $this->findInEitherCase($relatedClass, $this->decodeLinkageId($relatedType, $identifier->id));
             if ($member === null) {
                 continue;
             }
@@ -1573,7 +1574,31 @@ final class DoctrineDataPersister implements DataPersisterInterface, BuildsPivot
             return $this->entityManager->find($class, $id) ?? throw new ResourceNotFound();
         }
 
+        // A uuid-like key a text column may keep in either case is loaded, so the
+        // reference holds the key as stored rather than as the linkage spelled it.
+        if (\count(StoredIdForms::forms(null, [$id])) > 1) {
+            return $this->findInEitherCase($class, $id) ?? $this->entityManager->getReference($class, $id);
+        }
+
         return $this->entityManager->getReference($class, $id);
+    }
+
+    /**
+     * The `$class` row keyed `$id`, or by a uuid-like `$id` in the other case a text column
+     * may keep it in, or null when no row has either.
+     *
+     * @param class-string $class
+     */
+    private function findInEitherCase(string $class, mixed $id): ?object
+    {
+        foreach (StoredIdForms::forms(null, [$id]) as $form) {
+            $entity = $this->entityManager->find($class, $form);
+            if ($entity !== null) {
+                return $entity;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
+use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifCoach;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifPlayer;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PifTeam;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms\PivotIdFormsTestKernel;
@@ -18,7 +19,8 @@ use Symfony\Component\Uid\Uuid;
  * are keyed by a binary UUID, players by a UUID string their own column keeps in upper
  * case while the seat's player column holds it in lower case, and both types encode
  * their ids. A seat must still find its team and player wherever the pivot renders.
- * Doctrine-only: the in-memory provider stores no pivot rows.
+ * A coach keyed by a guid kept in capitals is addressed in either case, rendered in
+ * lower case, and linked by its stored key. Doctrine-only: the in-memory provider stores no pivot rows.
  */
 #[Group('spec:crud')]
 final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
@@ -30,6 +32,8 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
     private const string ANN = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C01';
 
     private const string BOB = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C02';
+
+    private const string COACH = 'C0AC4000-E5F6-4A7B-8C9D-0E1F2A3B4C01';
 
     protected static function getKernelClass(): string
     {
@@ -45,6 +49,7 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
         $entityManager->persist(new PifTeam(Uuid::fromString(self::BLUE), 'blue'));
         $entityManager->persist(new PifPlayer(self::ANN, 'ann'));
         $entityManager->persist(new PifPlayer(self::BOB, 'bob'));
+        $entityManager->persist(new PifCoach(self::COACH, 'cat'));
         $entityManager->flush();
         $entityManager->clear();
 
@@ -128,6 +133,59 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
         self::assertSame([self::team(self::RED) => 'captain', self::team(self::BLUE) => 'striker'], $this->roles($players[self::player(self::ANN)] ?? [], 'teams'));
     }
 
+    #[Test]
+    public function aGuidKeptInCapitalsIsAddressedInEitherCaseAndRenderedInLowerCase(): void
+    {
+        $wire = \strtolower(self::COACH);
+
+        foreach ([$wire, self::COACH] as $id) {
+            self::assertSame($wire, $this->data($this->get('/pif-coaches/' . $id))['id'] ?? null);
+        }
+
+        $renamed = $this->handle('/pif-coaches/' . $wire, 'PATCH', ['data' => ['type' => 'pif-coaches', 'id' => $wire, 'attributes' => ['name' => 'kit']]]);
+        self::assertSame(200, $renamed->getStatusCode(), (string) $renamed->getContent());
+        self::assertSame($wire, $this->data($this->decode($renamed))['id'] ?? null);
+    }
+
+    #[Test]
+    public function aLinkageToAGuidKeptInCapitalsStoresTheStoredKey(): void
+    {
+        $wire = \strtolower(self::COACH);
+
+        $response = $this->handle('/pif-teams/' . self::team(self::RED) . '?include=coach', 'PATCH', ['data' => [
+            'type' => 'pif-teams',
+            'id' => self::team(self::RED),
+            'relationships' => ['coach' => ['data' => ['type' => 'pif-coaches', 'id' => $wire]]],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+        self::assertSame(['type' => 'pif-coaches', 'id' => $wire], $this->toOne($this->data($document), 'coach'));
+        self::assertSame([$wire], \array_keys($this->included($document, 'pif-coaches')));
+
+        $relationship = $this->handle('/pif-teams/' . self::team(self::BLUE) . '/relationships/coach', 'PATCH', ['data' => ['type' => 'pif-coaches', 'id' => self::COACH]]);
+        self::assertContains($relationship->getStatusCode(), [200, 204], (string) $relationship->getContent());
+
+        $entityManager = $this->entityManager();
+        $entityManager->clear();
+        foreach ([self::RED, self::BLUE] as $team) {
+            self::assertSame(self::COACH, $entityManager->getConnection()->fetchOne('SELECT coachId FROM pif_team WHERE id = ?', [Uuid::fromString($team)], ['uuid']));
+        }
+        self::assertSame(['type' => 'pif-coaches', 'id' => $wire], $this->toOne($this->data($this->get('/pif-teams/' . self::team(self::BLUE) . '?include=coach')), 'coach'));
+    }
+
+    /**
+     * @param array<string, mixed> $resource
+     */
+    private function toOne(array $resource, string $relation): mixed
+    {
+        $relationships = $resource['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $object = $relationships[$relation] ?? null;
+        self::assertIsArray($object);
+
+        return $object['data'] ?? null;
+    }
+
     private static function team(string $uuid): string
     {
         return 'team-' . $uuid;
@@ -208,9 +266,10 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
         $byId = [];
         foreach ($included as $resource) {
             self::assertIsArray($resource);
-            if (($resource['type'] ?? null) === $type && \is_string($resource['id'] ?? null)) {
+            $id = $resource['id'] ?? null;
+            if (($resource['type'] ?? null) === $type && \is_string($id)) {
                 /** @var array<string, mixed> $resource */
-                $byId[$resource['id']] = $resource;
+                $byId[$id] = $resource;
             }
         }
         \ksort($byId);

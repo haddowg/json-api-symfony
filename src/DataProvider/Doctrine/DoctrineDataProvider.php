@@ -222,17 +222,25 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             $storageKey = $id;
         }
 
-        // The key in the form the entity holds it (a `uuid` id's Uuid object); a key
-        // its id type cannot convert matches no row.
+        // The key in the form the entity holds it (a `uuid` id's Uuid object), in each
+        // case a text column may keep a uuid-like key in; a key its id type cannot
+        // convert matches no row.
         $metadata = $this->entityManager->getClassMetadata($entityClass);
-        $storageKey = $this->ids->toPhp($metadata, $storageKey);
-        if ($storageKey === null) {
+        $storageKeys = $this->storageKeyForms($metadata, $storageKey);
+        if ($storageKeys === []) {
             return null;
         }
 
         $extensions = $this->extensionsFor($type);
         if ($extensions === []) {
-            return $this->entityManager->find($entityClass, $storageKey);
+            foreach ($storageKeys as $key) {
+                $entity = $this->entityManager->find($entityClass, $key);
+                if ($entity !== null) {
+                    return $entity;
+                }
+            }
+
+            return null;
         }
 
         $builder = $this->entityManager
@@ -241,8 +249,9 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
 
         // String-id lookups imply a single-field identifier (composite ids
         // cannot round-trip through one JSON:API id segment anyway).
-        $builder->andWhere(DoctrineIdentifiers::path($metadata, self::ROOT_ALIAS) . ' = :jsonapi_id');
-        $this->ids->bind($builder, 'jsonapi_id', $metadata, $storageKey);
+        $builder->andWhere(DoctrineIdentifiers::path($metadata, self::ROOT_ALIAS) . ' IN (:jsonapi_id)');
+        $this->ids->bindList($builder, 'jsonapi_id', $metadata, $storageKeys);
+        $builder->setMaxResults(1);
 
         // The SPI fetchOne carries no request, so the context's request is null.
         $builder = $this->extend($builder, new ExtensionContext($type, QueryPurpose::FetchOne, aliases: ExtensionAliases::of($builder)));
@@ -250,6 +259,29 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
         $result = $builder->getQuery()->getOneOrNullResult();
 
         return \is_object($result) ? $result : null;
+    }
+
+    /**
+     * `$storageKey` in the form the entity holds it, once for each case a text column may
+     * keep a uuid-like key in ({@see StoredIdForms::forms()}), leaving out a form the id
+     * type can't convert and a repeat of one it converts to the same key.
+     *
+     * @param \Doctrine\ORM\Mapping\ClassMetadata<object> $metadata
+     *
+     * @return list<mixed>
+     */
+    private function storageKeyForms(\Doctrine\ORM\Mapping\ClassMetadata $metadata, mixed $storageKey): array
+    {
+        $forms = [];
+        foreach (StoredIdForms::forms(null, [$storageKey]) as $form) {
+            $php = $this->ids->toPhp($metadata, $form);
+            $key = $php === null ? null : $this->ids->key($metadata, $php);
+            if ($key !== null) {
+                $forms[$key] ??= $php;
+            }
+        }
+
+        return \array_values($forms);
     }
 
     /**

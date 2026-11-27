@@ -22,6 +22,10 @@ class PifTeam
     #[ORM\OneToMany(targetEntity: PifSeat::class, mappedBy: 'team')]
     public Collection $seats;
 
+    #[ORM\ManyToOne(targetEntity: PifCoach::class)]
+    #[ORM\JoinColumn(name: 'coachId', referencedColumnName: 'id', nullable: true)]
+    public ?PifCoach $coach = null;
+
     public function __construct(
         #[ORM\Id]
         #[ORM\Column(type: 'uuid')]

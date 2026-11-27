@@ -22,7 +22,8 @@ use Zenstruck\Foundry\ZenstruckFoundryBundle;
  * Serves `pif-teams`, keyed by a binary UUID, and `pif-players`, keyed by a UUID string
  * its text column keeps in upper case and compares in any case, joined through a seat
  * whose team column is binary and whose player column may hold the key in lower case.
- * Both types encode their ids.
+ * Both types encode their ids. A team's `pif-coaches` coach is keyed by a guid its
+ * column keeps in capitals.
  */
 final class PivotIdFormsTestKernel extends Kernel
 {
@@ -114,6 +115,7 @@ final class PivotIdFormsTestKernel extends Kernel
 
         $services->set(PifTeamResource::class);
         $services->set(PifPlayerResource::class);
+        $services->set(PifCoachResource::class);
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void

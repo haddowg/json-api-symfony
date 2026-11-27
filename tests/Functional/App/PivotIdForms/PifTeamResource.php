@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional\App\PivotIdForms;
 
 use haddowg\JsonApi\Resource\AbstractResource;
+use haddowg\JsonApi\Resource\Field\BelongsTo;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\Str;
@@ -24,6 +25,7 @@ final class PifTeamResource extends AbstractResource
                 ->through(PifSeat::class)
                 ->fields(Str::make('role')->nullable()->build())
                 ->withData(),
+            BelongsTo::make('coach', 'pif-coaches')->nullable(),
         ];
     }
 }

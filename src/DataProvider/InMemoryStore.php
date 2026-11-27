@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\DataProvider;
 
+use haddowg\JsonApi\Resource\Field\StoredIdForms;
+
 /**
  * The mutable in-memory backing store shared by an {@see InMemoryDataProvider}
  * (reads) and an {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}
@@ -126,7 +128,14 @@ final class InMemoryStore
 
     public function find(string $id): ?object
     {
-        return $this->itemsById[$id] ?? null;
+        // A uuid-like id names the item whichever case it was stored under.
+        foreach (StoredIdForms::forms(null, [$id]) as $form) {
+            if (\is_string($form) && isset($this->itemsById[$form])) {
+                return $this->itemsById[$form];
+            }
+        }
+
+        return null;
     }
 
     /**

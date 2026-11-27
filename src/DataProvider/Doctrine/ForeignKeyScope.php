@@ -70,12 +70,13 @@ final class ForeignKeyScope
         $oneFormEach = true;
         if ($typeColumn === null || $storedTypes !== []) {
             foreach ($parents->keys as $wireId => $key) {
-                // A polymorphic id column may hold the storage key or the wire id, a uuid in either case.
-                $forms = $typeColumn === null ? [$key] : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
+                // A polymorphic id column may hold the storage key or the wire id, and any
+                // text column a uuid-like key in either case.
+                $forms = $typeColumn === null ? StoredIdForms::forms(null, [$key]) : [...StoredIdForms::forms($parents->encoder, [$key]), ...StoredIdForms::forms(null, [(string) $wireId])];
                 $parentForms = [];
                 foreach ($forms as $form) {
                     $database = $ids->fieldToDatabase($relatedMetadata, $column, $form);
-                    $exact = self::normalise($database);
+                    $exact = \is_scalar($database) || $database instanceof \Stringable ? (string) $database : null;
                     if ($exact === null || isset($seen[$exact])) {
                         continue;
                     }
@@ -324,7 +325,8 @@ final class ForeignKeyScope
 
     /**
      * A database value as the string it is keyed by: a polymorphic id in lower case, since
-     * its column may keep a key in either case, any other key exactly.
+     * its column may keep a key in either case, a uuid-like key in lower case, and any
+     * other key exactly.
      */
     private static function normalise(mixed $value, bool $polymorphic = false): ?string
     {
@@ -332,6 +334,6 @@ final class ForeignKeyScope
             return null;
         }
 
-        return $polymorphic ? \strtolower((string) $value) : (string) $value;
+        return $polymorphic ? \strtolower((string) $value) : StoredIdForms::comparable(\is_bool($value) || \is_float($value) ? (string) $value : $value);
     }
 }

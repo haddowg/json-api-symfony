@@ -615,9 +615,10 @@ final class DoctrinePivotKeysTest extends JsonApiFunctionalTestCase
         $byId = [];
         foreach ($included as $resource) {
             self::assertIsArray($resource);
-            if (($resource['type'] ?? null) === $type && \is_string($resource['id'] ?? null)) {
+            $id = $resource['id'] ?? null;
+            if (($resource['type'] ?? null) === $type && \is_string($id)) {
                 /** @var array<string, mixed> $resource */
-                $byId[$resource['id']] = $resource;
+                $byId[$id] = $resource;
             }
         }
 
