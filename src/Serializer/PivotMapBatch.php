@@ -20,8 +20,9 @@ final class PivotMapBatch
 
     /**
      * @param \Closure(): array<string, array<string, array<string, mixed>>> $read
+     * @param string $provider the class of the provider the read asks
      */
-    public function __construct(private readonly \Closure $read) {}
+    public function __construct(private readonly \Closure $read, public readonly string $provider) {}
 
     /**
      * The pivot values of `$parentWireId`'s members, keyed by member id; empty when the

@@ -14,7 +14,7 @@ use haddowg\JsonApiBundle\Tests\Functional\App\OutputTimezoneFixtures;
 
 /**
  * Seeds the output-timezone kernel's SQLite schema with the values the in-memory
- * fixtures hold, plus one booked performer whose pivot row only Doctrine renders.
+ * fixtures hold, plus one booked performer and its pivot row.
  */
 trait SeedsDoctrineOutputTimezone
 {

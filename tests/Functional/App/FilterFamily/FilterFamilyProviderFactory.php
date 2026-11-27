@@ -39,11 +39,21 @@ final class FilterFamilyProviderFactory
             }
         }
 
-        return new InMemoryDataProvider('ffBoards', $boards, static function (object $board): string {
+        $provider = new InMemoryDataProvider('ffBoards', $boards, static function (object $board): string {
             \assert($board instanceof Board);
 
             return $board->id;
         });
+        // Each pin's pivot row, as the Doctrine association entity holds it.
+        foreach (ItemFixtures::pins() as $board => $pins) {
+            $rows = [];
+            foreach ($pins as $item => $pin) {
+                $rows[(string) $item] = ['rank' => $pin['rank'], 'pinnedAt' => new \DateTimeImmutable($pin['pinnedAt'])];
+            }
+            $provider->store()->writePivotRows($boards[(string) $board], 'pinned', $rows);
+        }
+
+        return $provider;
     }
 
     /**

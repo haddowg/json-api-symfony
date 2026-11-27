@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
 use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
+use haddowg\JsonApiBundle\DataProvider\InMemoryDataProvider;
 use haddowg\JsonApiBundle\Tests\Functional\App\PivotBoundaryTestKernel;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -123,6 +124,30 @@ final class InMemoryPivotBoundaryTest extends JsonApiFunctionalTestCase
         $removed = $this->handle(self::BASE_URI . '/playlists/1/relationships/dataTracks', 'DELETE', ['data' => [['type' => 'tracks', 'id' => '1']]]);
         self::assertSame(200, $removed->getStatusCode(), (string) $removed->getContent());
         self::assertSame(['2' => ['position' => 5]], $this->pivots($this->decode($this->handle(self::BASE_URI . '/playlists/1/relationships/tracks'))['data'] ?? null));
+    }
+
+    #[Test]
+    #[Group('spec:errors')]
+    public function aMemberWithNoPivotRowFailsTheRenderAsADataIntegrityError(): void
+    {
+        static::ensureKernelShutdown();
+        static::bootKernel(['debug' => true]);
+        $playlists = static::getContainer()->get('test.pivot_playlists_provider');
+        self::assertInstanceOf(InMemoryDataProvider::class, $playlists);
+        $playlist = $playlists->store()->find('1');
+        self::assertNotNull($playlist);
+        // Track 2 stays on playlist 1, with no pivot row.
+        $playlists->store()->writePivotRows($playlist, 'tracks', ['1' => ['position' => 1]]);
+
+        // The error is logged, here through the default logger's output.
+        $this->expectOutputRegex('/\\[error\\] The "tracks" relation of "playlists" "1" renders the member "2", but .+ returned no pivot row for it\\./');
+        $response = $this->handle(self::BASE_URI . '/playlists/1/relationships/tracks');
+
+        self::assertSame(500, $response->getStatusCode(), (string) $response->getContent());
+        self::assertStringContainsString(
+            'The \\"tracks\\" relation of \\"playlists\\" \\"1\\" renders the member \\"2\\", but ' . \str_replace('\\', '\\\\', InMemoryDataProvider::class) . ' returned no pivot row for it.',
+            (string) $response->getContent(),
+        );
     }
 
     /**

@@ -996,7 +996,9 @@ Each member's `meta.pivot` carries the pivot fields core's
 hidden nor write-only for the request. A `hidden(when:)` predicate on a pivot field
 receives the related member (the track, not the join row), so it can hide a field on
 one member and show it on another. Every field it returns renders, `null` when the join
-row holds no value for it or the provider returns no row for the member. A member whose
+row holds no value for it. A member the provider returns no pivot row for is a data
+integrity fault: the response fails with a logged `500` naming the type, the relation, the
+parent and member ids and the provider, and the error's debug meta says the same. A member whose
 every field is hidden for the request still carries `"pivot": {}`, and a relation that
 declares only an `AdditionalProperties` entry renders no pivot. That matches the response
 schema in the [OpenAPI document](openapi.md), which requires `meta.pivot` on each member

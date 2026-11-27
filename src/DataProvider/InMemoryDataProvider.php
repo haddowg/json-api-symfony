@@ -666,7 +666,7 @@ final class InMemoryDataProvider implements DataProviderInterface, PivotAwarePro
      */
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
     {
-        return self::pivotValues($parent, $relation);
+        return self::pivotValues($parent, $relation, keepDates: false);
     }
 
     /**
@@ -717,11 +717,13 @@ final class InMemoryDataProvider implements DataProviderInterface, PivotAwarePro
 
     /**
      * `$parent`'s stored pivot rows for `$relation`, each keyed by the stored field's name and
-     * cast to its wire value, as the Doctrine provider reads them.
+     * cast to its wire value. A date is kept as it is stored unless `$keepDates` is false,
+     * since this provider doesn't know the output zone of the server rendering it: the
+     * pivot meta serializer casts it in that zone, as the Doctrine provider casts its dates.
      *
      * @return array<string, array<string, mixed>>
      */
-    private static function pivotValues(object $parent, RelationInterface $relation): array
+    private static function pivotValues(object $parent, RelationInterface $relation, bool $keepDates = true): array
     {
         $store = InMemoryStore::holding($parent);
         if ($store === null || !$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
@@ -731,7 +733,8 @@ final class InMemoryDataProvider implements DataProviderInterface, PivotAwarePro
         $values = [];
         foreach ($store->pivotRows($parent, $relation->column() ?? $relation->name()) as $member => $row) {
             foreach ($relation->storedPivotFields() as $field) {
-                $values[(string) $member][$field->name()] = PivotFields::cast($row[$field->column() ?? $field->name()] ?? null, $field);
+                $value = $row[$field->column() ?? $field->name()] ?? null;
+                $values[(string) $member][$field->name()] = $keepDates && $value instanceof \DateTimeInterface ? $value : PivotFields::cast($value, $field);
             }
         }
 

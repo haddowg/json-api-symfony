@@ -10,7 +10,9 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Serializer\SerializerInterface;
+use haddowg\JsonApiBundle\Serializer\MissingPivotRow;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
+use haddowg\JsonApiBundle\Serializer\PivotRowSource;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -51,12 +53,29 @@ final class PivotMetaSerializerTest extends TestCase
     }
 
     #[Test]
-    public function aMemberWithNoPivotRowRendersEachStoredFieldAsNull(): void
+    public function aMemberWithNoPivotRowFailsTheRenderNamingWhereItCameFrom(): void
     {
         $relation = BelongsToMany::make('tracks', 'tracks')->fields(Integer::make('position'), Str::make('label'))->build();
-        $serializer = $this->serializer($relation, ['t7' => ['position' => 1, 'label' => 'a']]);
+        $inner = $this->createStub(SerializerInterface::class);
+        $inner->method('getMeta')->willReturn([]);
+        $inner->method('getId')->willReturn('t9');
+        $serializer = new PivotMetaSerializer($inner, ['t7' => ['position' => 1, 'label' => 'a']], $relation, source: new PivotRowSource('playlists', 'p1', 'App\\TrackProvider'));
 
-        self::assertSame('{"pivot":{"position":null,"label":null}}', \json_encode($serializer->getMeta(['id' => 't9'], $this->createStub(JsonApiRequestInterface::class))));
+        $this->expectException(MissingPivotRow::class);
+        $this->expectExceptionMessage('The "tracks" relation of "playlists" "p1" renders the member "t9", but App\\TrackProvider returned no pivot row for it.');
+        $serializer->getMeta(['id' => 't9'], $this->createStub(JsonApiRequestInterface::class));
+    }
+
+    #[Test]
+    public function aMemberWithNoPivotRowOfAnAllComputedRelationRendersItsComputedFields(): void
+    {
+        $relation = BelongsToMany::make('tracks', 'tracks')->fields(Str::make('label')->computedUsing(static fn(): string => 'c'))->build();
+        $inner = $this->createStub(SerializerInterface::class);
+        $inner->method('getMeta')->willReturn([]);
+        $inner->method('getId')->willReturn('t9');
+        $serializer = new PivotMetaSerializer($inner, [], $relation, new \stdClass(), computedOnly: true);
+
+        self::assertSame('{"pivot":{"label":"c"}}', \json_encode($serializer->getMeta(['id' => 't9'], $this->createStub(JsonApiRequestInterface::class))));
     }
 
     #[Test]

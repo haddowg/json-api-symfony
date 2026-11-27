@@ -28,6 +28,15 @@ final class TeamProviderFactory
             $teams[] = new Team($id, $row['name'], $row['base'], $row['bonus'], $row['scores']);
         }
 
-        return new InMemoryDataProvider($type, ['1' => new Group(1, $teams)], sortArms: [new InMemoryTeamSortArm()]);
+        $group = new Group(1, $teams);
+        $provider = new InMemoryDataProvider($type, ['1' => $group], sortArms: [new InMemoryTeamSortArm()]);
+        // Each team's `slot` pivot row, its id, as the Doctrine association entity holds it.
+        $slots = [];
+        foreach (TeamFixtures::data() as $id => $row) {
+            $slots[(string) $id] = ['slot' => $id];
+        }
+        $provider->store()->writePivotRows($group, 'teams', $slots);
+
+        return $provider;
     }
 }

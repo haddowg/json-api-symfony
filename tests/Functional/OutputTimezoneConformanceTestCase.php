@@ -172,6 +172,74 @@ abstract class OutputTimezoneConformanceTestCase extends JsonApiFunctionalTestCa
         }
     }
 
+    /**
+     * A pivot date renders in the requesting server's zone on every path and both stores:
+     * `bookedAt` takes Tokyo's zone, `confirmedAt` keeps its own New York zone, and the
+     * `contractOn` date stays on the Paris day.
+     */
+    #[Test]
+    #[Group('spec:multi-server')]
+    public function aPivotDateRendersInTheServerZoneOnEveryPath(): void
+    {
+        $expected = ['bookedAt' => '2024-04-01T19:00:00+09:00', 'confirmedAt' => '2024-04-02T06:00:00-04:00', 'contractOn' => '2024-04-03'];
+
+        foreach (['/tokyo/shared-gigs/1/performers', '/tokyo/shared-gigs/1/relationships/performers'] as $path) {
+            $data = $this->fetchDocument($path)['data'] ?? null;
+            self::assertIsArray($data);
+            self::assertSame($expected, $this->pivotOfFirst($data), $path);
+        }
+
+        $document = $this->fetchDocument('/tokyo/shared-gigs/1?include=performers');
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $performers = $relationships['performers'] ?? null;
+        self::assertIsArray($performers);
+        $linkage = $performers['data'] ?? null;
+        self::assertIsArray($linkage);
+        self::assertSame($expected, $this->pivotOfFirst($linkage));
+        $included = $document['included'] ?? null;
+        self::assertIsArray($included);
+        self::assertSame($expected, $this->pivotOfFirst($included));
+
+        self::assertSame('2024-04-01T10:00:00+00:00', $this->pivotOfFirst($this->linkageOf('/shared-gigs/1?include=performers'))['bookedAt'] ?? null);
+    }
+
+    /**
+     * @param array<mixed> $members
+     *
+     * @return array<mixed>
+     */
+    private function pivotOfFirst(array $members): array
+    {
+        $member = $members[0] ?? null;
+        self::assertIsArray($member);
+        $meta = $member['meta'] ?? null;
+        self::assertIsArray($meta);
+        $pivot = $meta['pivot'] ?? null;
+        self::assertIsArray($pivot);
+
+        return $pivot;
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private function linkageOf(string $path): array
+    {
+        $data = $this->fetchDocument($path)['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        $performers = $relationships['performers'] ?? null;
+        self::assertIsArray($performers);
+        $linkage = $performers['data'] ?? null;
+        self::assertIsArray($linkage);
+
+        return $linkage;
+    }
+
     private function includedVenueOpenedAt(string $path): mixed
     {
         $included = $this->fetchDocument($path)['included'] ?? null;

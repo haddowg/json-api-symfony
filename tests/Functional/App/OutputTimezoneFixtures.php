@@ -54,7 +54,27 @@ final class OutputTimezoneFixtures
 
     public static function createSharedGigs(): InMemoryDataProvider
     {
-        return self::gigProvider('shared-gigs');
+        $gig = self::gig(self::venue());
+        $gig->performers = [self::performer()];
+        $provider = new InMemoryDataProvider('shared-gigs', [1 => $gig]);
+        // The pivot row the Doctrine seed's association entity holds.
+        $provider->store()->writePivotRows($gig, 'performers', ['1' => [
+            'bookedAt' => self::at('2024-04-01 12:00:00'),
+            'confirmedAt' => self::at('2024-04-02 12:00:00'),
+            'contractOn' => self::at('2024-04-03 00:00:00'),
+        ]]);
+
+        return $provider;
+    }
+
+    public static function performer(): Performer
+    {
+        return new Performer(1, 'Headliner');
+    }
+
+    public static function createPerformers(): InMemoryDataProvider
+    {
+        return new InMemoryDataProvider('performers', [1 => self::performer()]);
     }
 
     public static function createVenues(): InMemoryDataProvider

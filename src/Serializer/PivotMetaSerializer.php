@@ -37,9 +37,9 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * into BOTH the full resource (the related endpoint `GET /{type}/{id}/{rel}`) and
  * the resource identifier (the relationship-linkage endpoint
  * `GET /{type}/{id}/relationships/{rel}`) — so binding this serializer for those two
- * renders needs no core change. A member with no pivot entry (it should not happen
- * for a pivot collection, but is possible for the relationship endpoint's full
- * association) renders the inner meta unchanged.
+ * renders needs no core change. A member of a relation with stored pivot fields that
+ * the map holds no row for fails the render with {@see MissingPivotRow}, naming the
+ * {@see PivotRowSource} the map came from.
  *
  * The `pivot` key keeps the values namespaced so they never collide with the
  * member resource's own meta, and so a client can tell pivot data from intrinsic
@@ -92,6 +92,7 @@ final class PivotMetaSerializer implements
      * @param object|null                          $parent   the parent whose relation renders, which hooked pivot fields read
      * @param string|null                          $outputTimezone the server's default output zone a hooked date field adopts
      * @param bool                                 $computedOnly   whether no pivot storage was read, so only the computed fields render
+     * @param PivotRowSource|null                  $source         the parent and provider the rows came from, named when a member has none
      */
     public function __construct(
         private readonly SerializerInterface $inner,
@@ -100,6 +101,7 @@ final class PivotMetaSerializer implements
         private readonly ?object $parent = null,
         private readonly ?string $outputTimezone = null,
         private readonly bool $computedOnly = false,
+        private readonly ?PivotRowSource $source = null,
     ) {}
 
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
@@ -141,9 +143,18 @@ final class PivotMetaSerializer implements
         }
 
         // A relation declaring no pivot field, an additionalProperties entry at most,
-        // renders none. A member with no row renders each stored field as `null`.
+        // renders none. A member with no row has no stored values to render.
         if ($this->relation->pivotFields() === []) {
             return $meta;
+        }
+        if ($pivot === null && $this->relation->storedPivotFields() !== []) {
+            throw MissingPivotRow::for(
+                $this->source->parentType ?? 'unknown',
+                $this->relation->name(),
+                $this->source->parentId ?? 'unknown',
+                $id,
+                $this->source->provider ?? 'its provider',
+            );
         }
         $pivot ??= [];
         if ($this->parent !== null && PivotFields::readsThroughHook($this->relation)) {
@@ -215,7 +226,10 @@ final class PivotMetaSerializer implements
 
         $readable = [];
         foreach ($this->relation->readablePivotFieldsFor($request, $member) as $field) {
-            $readable[$field->name()] = $pivot[$field->name()] ?? null;
+            $value = $pivot[$field->name()] ?? null;
+            // A provider that leaves a stored date as it is, the in-memory one, gets it cast in
+            // the server's output zone here, as the Doctrine provider casts its own.
+            $readable[$field->name()] = $value instanceof \DateTimeInterface ? PivotFields::cast($value, $field, $this->outputTimezone) : $value;
         }
 
         return $readable;
