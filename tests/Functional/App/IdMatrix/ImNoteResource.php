@@ -8,8 +8,10 @@ use haddowg\JsonApi\Resource\AbstractResource;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\Str;
+use haddowg\JsonApi\Resource\Filter\Where;
 use haddowg\JsonApi\Resource\Filter\WhereIn;
 use haddowg\JsonApi\Resource\Filter\WhereMorph;
+use haddowg\JsonApi\Resource\Filter\WhereNotIn;
 
 abstract class ImNoteResource extends AbstractResource
 {
@@ -38,6 +40,12 @@ abstract class ImNoteResource extends AbstractResource
         $filters = [WhereMorph::make('target'), WhereMorph::make('ref')];
         foreach (self::FOREIGN_KEYS as $kind) {
             $filters[] = WhereIn::make($kind . 'Owner', $kind . 'OwnerId');
+        }
+        foreach (['guid', 'str'] as $kind) {
+            $filters[] = Where::make($kind . 'OwnerIs', $kind . 'OwnerId');
+            $filters[] = Where::make($kind . 'OwnerNot', $kind . 'OwnerId', '<>');
+            $filters[] = WhereNotIn::make($kind . 'OwnerNotIn', $kind . 'OwnerId');
+            $filters[] = Where::make($kind . 'OwnerFrom', $kind . 'OwnerId', '>=');
         }
 
         return $filters;

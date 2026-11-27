@@ -11,6 +11,8 @@ use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Filter\WhereDoesntHave;
 use haddowg\JsonApi\Resource\Filter\WhereHas;
+use haddowg\JsonApi\Resource\Filter\WhereIdIn;
+use haddowg\JsonApi\Resource\Filter\WhereIdNotIn;
 
 /**
  * An owner whose `notes` are the `im-notes` whose foreign key field of its id kind holds
@@ -36,6 +38,8 @@ abstract class ImOwnerResource extends AbstractResource
         return [
             WhereHas::make('hasNotes', 'notes'),
             WhereDoesntHave::make('noNotes', 'notes'),
+            WhereIdIn::make(),
+            WhereIdNotIn::make('notId'),
         ];
     }
 

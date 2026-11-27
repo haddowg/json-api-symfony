@@ -756,6 +756,17 @@ A few translations carry nuance:
   is case-sensitive; SQLite folds ASCII only). Case-folding beyond ASCII remains
   platform-defined. A non-string filter value matches nothing (`stripos` requires
   two strings).
+- **A uuid value matches in either case.** An equality filter whose value is a uuid in
+  its canonical 8-4-4-4-12 hex form, which is `Where` with `=`, `==`, `===`, `!=` or `<>`,
+  `WhereIn`, `WhereNotIn` and the id filters, binds the value as sent and its lower- and
+  upper-case forms: `col IN (:forms)`, or `col NOT IN (:forms)` for a negated one. The
+  column itself is never wrapped in `LOWER()`, so an index on it still serves the query,
+  and a uuid whose letters mix cases in the column matches only as sent. The same holds at
+  the field leaf of a `->through()` path, `WhereThrough` and `WhereThroughIn`, on a pivot
+  row and in a `relatedQuery` filter. A column whose type reads every form as one value,
+  such as a Symfony `uuid` column or a `guid` PostgreSQL keeps as a native uuid, keeps its
+  single `= :param`. The ordered operators, `Range`, `DateRange`, `like`, `starts` and
+  `ends` are unchanged, and every value that is no uuid compares exactly.
 - **`starts`/`ends` mirror `like`'s fold.** The two prefix/suffix operators (backing
   the `StartsWith`/`EndsWith` [convenience filters](data-layer.md#convenience-filters))
   reuse the same wildcard-`LIKE` helper — same `%`/`_` escaping, same `LOWER()` both
