@@ -34,8 +34,15 @@ class UuidBookEntity
     #[ORM\JoinTable(name: 'uuid_book_labels')]
     public Collection $labels;
 
+    /**
+     * @var Collection<int, UuidCreditEntity>
+     */
+    #[ORM\OneToMany(targetEntity: UuidCreditEntity::class, mappedBy: 'book')]
+    public Collection $credits;
+
     public function __construct()
     {
         $this->labels = new ArrayCollection();
+        $this->credits = new ArrayCollection();
     }
 }

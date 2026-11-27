@@ -330,6 +330,113 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
         }
     }
 
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function anActionResponseRendersThePivotOfItsInclude(): void
+    {
+        $document = $this->action('/cp-crews/2/-actions/muster?include=members');
+
+        self::assertSame(self::BLUES, $this->pivots($this->linkage($document, 'members')));
+        self::assertSame(self::BLUES, $this->includedPivots($document, 'cp-members'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function anActionResponseRendersThePivotOfANestedInclude(): void
+    {
+        $document = $this->action('/cp-ships/2/-actions/muster?include=crew.members');
+
+        self::assertSame(self::BARK, $this->pivots($this->linkage($document, 'members')));
+        self::assertSame(self::BLUES, $this->pivots($this->includedLinkage($document, 'cp-crews', '2', 'members')));
+        self::assertSame(self::BLUES, $this->includedPivots($document, 'cp-members'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aCollectionActionResponseRendersEachPivot(): void
+    {
+        $document = $this->action('/cp-ships/-actions/roll?include=crew.members');
+
+        self::assertSame(self::ARK, $this->pivots($this->dataLinkage($document, 'cp-ships', '1', 'members')));
+        self::assertSame(self::BARK, $this->pivots($this->dataLinkage($document, 'cp-ships', '2', 'members')));
+        self::assertSame([], $this->pivots($this->dataLinkage($document, 'cp-ships', '3', 'members')));
+        self::assertSame(self::REDS, $this->pivots($this->includedLinkage($document, 'cp-crews', '1', 'members')));
+        self::assertSame(self::BLUES, $this->pivots($this->includedLinkage($document, 'cp-crews', '2', 'members')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aMixedTypeActionResponseRendersEachTypesPivot(): void
+    {
+        $document = $this->action('/cp-ships/-actions/mix?include=members');
+
+        self::assertSame(self::BARK, $this->pivots($this->dataLinkage($document, 'cp-ships', '2', 'members')));
+        self::assertSame(self::REDS, $this->pivots($this->dataLinkage($document, 'cp-crews', '1', 'members')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function anAcceptedActionsJobResourceRendersItsPivot(): void
+    {
+        $document = $this->action('/cp-crews/1/-actions/queue?include=members', 202);
+
+        self::assertSame(self::REDS, $this->pivots($this->linkage($document, 'members')));
+        self::assertSame(self::REDS, $this->includedPivots($document, 'cp-members'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aSparseFieldsetOnAnActionResponseKeepsThePivot(): void
+    {
+        $document = $this->action('/cp-ships/2/-actions/muster?include=crew.members&fields[cp-crews]=members&fields[cp-members]=name');
+
+        self::assertSame(self::BLUES, $this->pivots($this->includedLinkage($document, 'cp-crews', '2', 'members')));
+        self::assertSame(self::BLUES, $this->includedPivots($document, 'cp-members'));
+        foreach ($this->included($document) as $resource) {
+            if ($resource['type'] === 'cp-members') {
+                self::assertSame(['name'], \array_keys((array) ($resource['attributes'] ?? [])));
+            }
+        }
+
+        // A ship's `crew` is declared notSparseField().
+        $document = $this->action('/cp-ships/2/-actions/muster?include=crew.members&fields[cp-ships]=name');
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        $relationships = $data['relationships'] ?? null;
+        self::assertIsArray($relationships);
+        self::assertSame(['crew'], \array_keys($relationships));
+        self::assertSame(self::BLUES, $this->pivots($this->includedLinkage($document, 'cp-crews', '2', 'members')));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aNotSparsePivotRelationStaysOutsideTheFieldset(): void
+    {
+        // A fleet's `hands` is declared notSparseField().
+        foreach ([$this->get('/cp-fleets/1?include=hands&fields[cp-fleets]=name'), $this->action('/cp-fleets/1/-actions/muster?include=hands&fields[cp-fleets]=name')] as $document) {
+            $data = $document['data'] ?? null;
+            self::assertIsArray($data);
+            $relationships = $data['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            self::assertSame(['hands'], \array_keys($relationships));
+            self::assertSame(['2' => ['rank' => 'Home:Grace']], $this->pivots($this->linkage($document, 'hands')));
+            self::assertSame(['2' => ['rank' => 'Home:Grace']], $this->includedPivots($document, 'cp-members'));
+        }
+    }
+
+    /**
+     * The document a custom action answers with.
+     *
+     * @return array<string, mixed>
+     */
+    protected function action(string $path, int $status = 200): array
+    {
+        $response = $this->handle($path, 'POST');
+        self::assertSame($status, $response->getStatusCode(), $path . ': ' . $response->getContent());
+
+        return $this->decode($response);
+    }
+
     /**
      * The first result of an Atomic Operations batch holding `$operation`.
      *

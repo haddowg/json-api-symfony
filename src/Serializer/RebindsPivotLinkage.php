@@ -6,6 +6,7 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
+use haddowg\JsonApi\Resource\RendersRelationsTrait;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
 use haddowg\JsonApi\Serializer\SerializerInterface;
@@ -24,22 +25,27 @@ use haddowg\JsonApi\Serializer\SerializerInterface;
  * (the relationship-linkage endpoint); {@see PivotLinkageParentSerializer} rebinds
  * EACH pivot relation over its parent's slice of a batched map (a primary-resource
  * document). The substitution is identical, so it lives here once.
+ *
+ * The callables come from core's {@see RendersRelationsTrait::relationshipCallable()},
+ * so a relation declared `notSparseField()` still renders whatever `fields[type]` lists.
  */
 trait RebindsPivotLinkage
 {
+    use RendersRelationsTrait;
+
     /**
      * The relationship callable for `$relation`, rebuilding its linkage through a
      * {@see PivotSubstitutingResolver} over `$pivotSerializer` so each identifier
      * carries its pivot meta. The callable matches the core relationship-builder
      * signature core invokes from a serializer's `getRelationships()` map.
      *
-     * @return \Closure(mixed, JsonApiRequestInterface, string): AbstractRelationship
+     * @return callable(mixed, JsonApiRequestInterface, string): AbstractRelationship
      */
     protected function pivotLinkageBuilder(
         RelationInterface $relation,
         SerializerResolverInterface $resolver,
         PivotMetaSerializer $pivotSerializer,
-    ): \Closure {
+    ): callable {
         return $this->reboundBuilder($relation, $resolver, [$relation->relatedTypes()[0] ?? '' => $pivotSerializer]);
     }
 
@@ -50,16 +56,15 @@ trait RebindsPivotLinkage
      *
      * @param non-empty-array<string, SerializerInterface> $serializers keyed by related type
      *
-     * @return \Closure(mixed, JsonApiRequestInterface, string): AbstractRelationship
+     * @return callable(mixed, JsonApiRequestInterface, string): AbstractRelationship
      */
     protected function reboundBuilder(
         RelationInterface $relation,
         SerializerResolverInterface $resolver,
         array $serializers,
-    ): \Closure {
+    ): callable {
         $type = \array_key_first($serializers);
-        $substituting = new PivotSubstitutingResolver($resolver, $type, $serializers[$type], $serializers);
 
-        return static fn(mixed $model, JsonApiRequestInterface $req, string $name): AbstractRelationship => $relation->buildRelationship($model, $req, $substituting);
+        return self::relationshipCallable($relation, new PivotSubstitutingResolver($resolver, $type, $serializers[$type], $serializers));
     }
 }

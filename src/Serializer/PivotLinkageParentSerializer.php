@@ -7,9 +7,7 @@ namespace haddowg\JsonApiBundle\Serializer;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\StoredIdForms;
-use haddowg\JsonApi\Resource\Internal\NonSparseMember;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
-use haddowg\JsonApi\Schema\Relationship\AbstractRelationship;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
 /**
@@ -49,6 +47,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
      * @param array<string, array<string, array<string, array<string, mixed>>>|null> $maps the batched per-parent pivot maps, `relationName => parentWireId => memberId => [field => value]`, `null` for a relation with no pivot storage, which renders its computed fields only
      * @param string|null                      $outputTimezone the server's default output zone a computed pivot date field adopts
      * @param array<string, array{relation: RelationInterface, serializers: non-empty-array<string, SerializerInterface>}> $nested the included relations whose related resources render through their own decorators, keyed by relation name, with those decorators keyed by related type
+     * @param string|null                      $type      the one type whose resources this decorator rebinds when the inner serializer renders several; a resource of another type renders as the inner serializer renders it
      */
     public function __construct(
         private readonly SerializerInterface $inner,
@@ -57,11 +56,15 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
         private readonly array $maps,
         private readonly ?string $outputTimezone = null,
         private readonly array $nested = [],
+        private readonly ?string $type = null,
     ) {}
 
     public function getRelationships(mixed $object, JsonApiRequestInterface $request): array
     {
         $relationships = $this->inner->getRelationships($object, $request);
+        if ($this->type !== null && $this->inner->getType($object) !== $this->type) {
+            return $relationships;
+        }
 
         $parentWireId = $this->inner->getId($object);
 
@@ -93,11 +96,11 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             // the decorator for its include path.
             $related = $this->nested[$name]['serializers'][$relatedType] ?? $this->resolver->serializerFor($relatedType);
 
-            $relationships[$name] = self::rebound($relationships[$name], $this->pivotLinkageBuilder(
+            $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
                 new PivotMetaSerializer($related, $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null),
-            ));
+            );
         }
 
         foreach ($this->nested as $name => $nested) {
@@ -105,23 +108,10 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
                 continue;
             }
 
-            $relationships[$name] = self::rebound($relationships[$name], $this->reboundBuilder($nested['relation'], $this->resolver, $nested['serializers']));
+            $relationships[$name] = $this->reboundBuilder($nested['relation'], $this->resolver, $nested['serializers']);
         }
 
         return $relationships;
-    }
-
-    /**
-     * `$build` in place of the inner serializer's `$callable`, still rendered whatever
-     * `fields[type]` lists when the relation is declared `notSparseField()`.
-     *
-     * @param \Closure(mixed, JsonApiRequestInterface, string): AbstractRelationship $build
-     *
-     * @return callable(mixed, JsonApiRequestInterface, string): AbstractRelationship
-     */
-    private static function rebound(mixed $callable, \Closure $build): callable
-    {
-        return $callable instanceof NonSparseMember ? new NonSparseMember($build) : $build;
     }
 
     protected function inner(): SerializerInterface

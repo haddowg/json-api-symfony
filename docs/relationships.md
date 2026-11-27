@@ -975,8 +975,9 @@ The same holds wherever the parent renders, not only as the primary resource. A 
 relation reached through a nested include (`GET /users/1?include=playlists.tracks`, at
 any depth) carries `meta.pivot` on its linkage and on its included members, and so does
 one included from a related endpoint (`GET /users/1/playlists?include=tracks`), a
-`MorphToMany` related endpoint among them, or in the response to a create or update
-that names `?include`. The pivot map is read once per
+`MorphToMany` related endpoint among them, in the response to a create or update
+that names `?include`, or in a custom action's response, its `202` job resource
+included. The pivot map is read once per
 include path for every parent at it, never once per parent.
 
 An included member is one resource object, so when two parents link to the same member

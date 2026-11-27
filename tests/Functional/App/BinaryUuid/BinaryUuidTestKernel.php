@@ -126,6 +126,9 @@ class BinaryUuidTestKernel extends Kernel
             }
         }
         $services->set(HiddenLabelsExtension::class);
+        foreach ([ShowUuidBook::class, ShowUuidShelf::class, ListUuidBooks::class] as $action) {
+            $services->set($action);
+        }
     }
 
     protected function encodesIds(): bool

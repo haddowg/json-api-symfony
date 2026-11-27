@@ -9,7 +9,9 @@ use Doctrine\ORM\Tools\SchemaTool;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixDoctrineTestKernel;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixSeed;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImGuidOwner;
+use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImGuidSeat;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImNote;
+use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\ImUuidOwner;
 use haddowg\JsonApiBundle\Tests\Functional\App\QueryCountingLogger;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -171,6 +173,25 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
     }
 
     #[Test]
+    public function aGuidStoredInCapitalsRendersItsPivotOnAnActionResponse(): void
+    {
+        $this->seatAShoutyOwner();
+        $wire = \strtolower(self::SHOUTY);
+        $own = [IdMatrixSeed::wireId('uuid', 0) => ['rank' => 1], IdMatrixSeed::wireId('uuid', 1) => ['rank' => 2]];
+        \ksort($own);
+
+        foreach ([$wire, self::SHOUTY] as $id) {
+            foreach ([
+                $this->fetch('/im-guid-owners/' . $id . '?include=peers'),
+                $this->invoke('/im-guid-owners/' . $id . '/-actions/show?include=peers'),
+            ] as $document) {
+                self::assertSame($wire, $this->documentData($document)['id'] ?? null, $id);
+                self::assertSame($own, $this->seatPivots($this->documentData($document)), $id);
+            }
+        }
+    }
+
+    #[Test]
     public function aMalformedGuidMatchesNothing(): void
     {
         self::assertSame(200, $this->handle('/im-notes?filter[guidOwner]=not-a-guid')->getStatusCode());
@@ -199,6 +220,79 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
 
         self::assertSame([], \array_values(\array_filter($refs, static fn(string $sql): bool => \str_contains($sql, 'row_number()'))));
         self::assertCount(3, $refs);
+    }
+
+    private const string SHOUTY = 'C0FFEE00-1E00-4A4E-9C55-7A4E0000000A';
+
+    /**
+     * Stores a guid owner keyed in capitals, seated beside the first two uuid owners.
+     */
+    private function seatAShoutyOwner(): void
+    {
+        $entityManager = $this->entityManager();
+        $shouty = new ImGuidOwner(self::SHOUTY, 'Shouty');
+        $entityManager->persist($shouty);
+        foreach ([0 => 1, 1 => 2] as $index => $rank) {
+            $peer = $entityManager->find(ImUuidOwner::class, IdMatrixSeed::keys()['uuid'][$index]);
+            self::assertInstanceOf(ImUuidOwner::class, $peer);
+            $entityManager->persist(new ImGuidSeat($shouty, $peer, $rank));
+        }
+        $entityManager->flush();
+        $entityManager->clear();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function invoke(string $path): array
+    {
+        $response = $this->handle($path, 'POST');
+        self::assertSame(200, $response->getStatusCode(), $path . ': ' . (string) $response->getContent());
+
+        return $this->decode($response);
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     *
+     * @return array<string, mixed>
+     */
+    private function documentData(array $document): array
+    {
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        /** @var array<string, mixed> $data */
+
+        return $data;
+    }
+
+    /**
+     * Each `peers` linkage member's `meta.pivot` on `$resource`, keyed by id in id order.
+     *
+     * @param array<string, mixed> $resource
+     *
+     * @return array<string, mixed>
+     */
+    private function seatPivots(array $resource): array
+    {
+        $relationships = $resource['relationships'] ?? null;
+        self::assertIsArray($relationships, (string) \json_encode($resource));
+        $peers = $relationships['peers'] ?? null;
+        self::assertIsArray($peers);
+        $data = $peers['data'] ?? null;
+        self::assertIsArray($data, (string) \json_encode($peers));
+
+        $pivots = [];
+        foreach ($data as $member) {
+            self::assertIsArray($member);
+            self::assertIsString($member['id'] ?? null);
+            $meta = $member['meta'] ?? null;
+            self::assertIsArray($meta, (string) \json_encode($member));
+            $pivots[$member['id']] = $meta['pivot'] ?? null;
+        }
+        \ksort($pivots);
+
+        return $pivots;
     }
 
     /**

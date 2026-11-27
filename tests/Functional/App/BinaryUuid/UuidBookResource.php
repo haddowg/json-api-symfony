@@ -11,6 +11,7 @@ use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\HasMany;
 use haddowg\JsonApi\Resource\Field\Id;
 use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
+use haddowg\JsonApi\Resource\Field\Integer;
 use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
@@ -36,6 +37,9 @@ final class UuidBookResource extends AbstractResource
                 ->withData()
                 ->paginate(PagePaginator::make())
                 ->countable(),
+            BelongsToMany::make('credited', 'labels')
+                ->through(UuidCreditEntity::class)
+                ->fields(Integer::make('weight')),
             // Computed, so its members are narrowed through the provider's id-IN probe.
             HasMany::make('pickedLabels', 'labels')
                 ->withData()
