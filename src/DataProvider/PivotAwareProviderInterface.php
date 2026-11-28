@@ -67,10 +67,15 @@ interface PivotAwareProviderInterface
      * no filter) — `farMemberId => [field => typed value]` — for the
      * relationship-linkage endpoint (`GET /{type}/{id}/relationships/{rel}`), which
      * renders the whole association off the parent rather than a windowed page.
+     * `$parentType` is the served type of `$parent`, which tells apart one object served
+     * as several types.
+     *
+     * @param string $parentType the served parent type, as {@see fetchRelatedPivotMapBatch()} takes it
      *
      * @return array<string, array<string, mixed>>
      */
     public function fetchRelatedPivotMap(
+        string $parentType,
         string $relatedType,
         object $parent,
         RelationInterface $relation,

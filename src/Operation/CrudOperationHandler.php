@@ -1900,7 +1900,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Linkage naming a resource the related endpoint does not serve is rejected as
             // missing, and a replace keeps the members the scope hides. The member-move
             // gates run here, ahead of the before hooks.
-            $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
+            $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $type, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
             $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent, $type);
             $this->guardMovedMembers($server, $persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
@@ -2053,7 +2053,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         Mode $mode,
         JsonApiRequestInterface $body,
         object $parent,
-        ?string $type = null,
+        string $type,
     ): void {
         if ($mode !== Mode::Replace
             || !$linkage instanceof ToManyRelationship
@@ -2062,9 +2062,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $current = $type !== null && $this->readRouter?->readsByForeignKey($relation) === true
+        $current = $this->readRouter?->readsByForeignKey($relation) === true
             ? $this->foreignKeyMembers($server, $type, $parent, $relation, $body)
-            : CurrentMembers::of($server, $this->providers, $parent, $relation, $body);
+            : CurrentMembers::of($server, $this->providers, $parent, $type, $relation, $body);
         $relation->assertMembershipUnchanged($body, $parent, $current, $linkage);
     }
 
@@ -2511,7 +2511,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     private function unqueriedPivot(Server $server, string $type, SerializerInterface $related, RelationInterface $relation, object $parent, ?object $relatedProvider, string $relatedType): SerializerInterface
     {
         if ($relatedProvider instanceof PivotAwareProviderInterface && PivotFields::readsStored($relatedProvider, $relation)) {
-            return new PivotMetaSerializer($related, $relatedProvider->fetchRelatedPivotMap($relatedType, $parent, $relation), $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType));
+            return new PivotMetaSerializer($related, $relatedProvider->fetchRelatedPivotMap($type, $relatedType, $parent, $relation), $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType));
         }
 
         return PivotFields::hasComputed($relation)
@@ -3180,7 +3180,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->serverName($request),
             ));
 
-            $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
+            $linkage = $this->linkageGuard?->scope($server, $entity, $type, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
                 ?? $relationship['linkage'];
             if ($creating === false) {
                 $this->guardMembership($server, $relationship['relation'], $linkage, Mode::Replace, $body, $entity, $type);

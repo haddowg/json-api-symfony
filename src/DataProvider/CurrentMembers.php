@@ -26,10 +26,10 @@ final class CurrentMembers
     /**
      * @return list<array{0: string, 1: string}>
      */
-    public static function of(Server $server, DataProviderRegistry $providers, object $parent, RelationInterface $relation, JsonApiRequestInterface $request): array
+    public static function of(Server $server, DataProviderRegistry $providers, object $parent, string $parentType, RelationInterface $relation, JsonApiRequestInterface $request): array
     {
         $members = [];
-        $pivotIds = self::throughPivot($providers, $parent, $relation);
+        $pivotIds = self::throughPivot($providers, $parentType, $parent, $relation);
         if ($pivotIds !== null) {
             $type = $relation->relatedTypes()[0];
             foreach ($pivotIds as $id) {
@@ -73,7 +73,7 @@ final class CurrentMembers
      *
      * @return list<string>|null
      */
-    public static function throughPivot(DataProviderRegistry $providers, object $parent, RelationInterface $relation): ?array
+    public static function throughPivot(DataProviderRegistry $providers, string $parentType, object $parent, RelationInterface $relation): ?array
     {
         $relatedType = $relation->isToMany() && \count($relation->relatedTypes()) === 1 ? $relation->relatedTypes()[0] : null;
         if ($relatedType === null || !$providers->supportsType($relatedType)) {
@@ -85,6 +85,6 @@ final class CurrentMembers
             return null;
         }
 
-        return \array_map(\strval(...), \array_keys($provider->fetchRelatedPivotMap($relatedType, $parent, $relation)));
+        return \array_map(\strval(...), \array_keys($provider->fetchRelatedPivotMap($parentType, $relatedType, $parent, $relation)));
     }
 }

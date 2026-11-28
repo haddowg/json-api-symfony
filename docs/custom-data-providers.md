@@ -520,7 +520,8 @@ A `belongsToMany` with stored pivot fields renders each member's `meta.pivot` wh
 linkage data renders, and the provider of its related type reads the stored values. Implement
 `PivotAwareProviderInterface` on it: `fetchRelatedPivotMap()` returns one parent's values and
 `fetchRelatedPivotMapBatch()` every parent's at one include path, keyed by the parent's wire id
-and then the member's. `supportsPivot()` says whether it also queries the rows, filtering,
+and then the member's. Both take the served parent type first, `$parentType, $relatedType`,
+so a provider serving one object as several types can tell them apart. `supportsPivot()` says whether it also queries the rows, filtering,
 sorting and paging a related read by a pivot field through `fetchRelatedPivotCollection()`;
 answer `false` and the related reads take the plain path, as the in-memory provider's do. A
 related read that returns a `PivotCollectionResult`, from `fetchRelatedPivotCollection()` or

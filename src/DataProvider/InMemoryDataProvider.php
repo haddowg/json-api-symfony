@@ -691,7 +691,7 @@ final class InMemoryDataProvider implements DataProviderInterface, PivotAwarePro
         throw new \LogicException(\sprintf('The in-memory provider of "%s" does not query pivot rows.', $relatedType));
     }
 
-    public function fetchRelatedPivotMap(string $relatedType, object $parent, RelationInterface $relation): array
+    public function fetchRelatedPivotMap(string $parentType, string $relatedType, object $parent, RelationInterface $relation): array
     {
         return self::pivotValues($parent, $relation);
     }
