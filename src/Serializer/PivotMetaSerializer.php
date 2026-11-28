@@ -6,8 +6,8 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
-use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\ResourceMeta;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Serializer\CountableControlsInterface;
@@ -93,6 +93,7 @@ final class PivotMetaSerializer implements
      * @param string|null                          $outputTimezone the server's default output zone a hooked date field adopts
      * @param bool                                 $computedOnly   whether no pivot storage was read, so only the computed fields render
      * @param PivotRowSource|null                  $source         the parent and provider the rows came from, named when a member has none
+     * @param IdEncoderInterface|null              $memberEncoder  the related type's id encoder, which decodes a member's wire id to the id the map may be keyed by
      */
     public function __construct(
         private readonly SerializerInterface $inner,
@@ -102,6 +103,7 @@ final class PivotMetaSerializer implements
         private readonly ?string $outputTimezone = null,
         private readonly bool $computedOnly = false,
         private readonly ?PivotRowSource $source = null,
+        private readonly ?IdEncoderInterface $memberEncoder = null,
     ) {}
 
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
@@ -132,7 +134,7 @@ final class PivotMetaSerializer implements
         }
 
         $id = $this->inner->getId($object);
-        $pivot = $this->map()[$id] ?? $this->byComparableId()[StoredIdForms::comparable($id)] ?? null;
+        $pivot = PivotKeys::find($this->map(), $id, $this->memberEncoder);
         if (!$this->relation instanceof BelongsToMany) {
             // Without the relation the map renders as given, an empty entry as an object.
             if ($pivot !== null) {
@@ -156,12 +158,37 @@ final class PivotMetaSerializer implements
                 $this->source->provider ?? 'its provider',
             );
         }
-        $pivot ??= [];
+        // A hook reads every stored value in its wire form, a date in the server's zone,
+        // whichever provider read it.
+        $pivot = $this->wireValues($pivot ?? []);
         if ($this->parent !== null && PivotFields::readsThroughHook($this->relation)) {
             $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
         }
 
         return $this->withObject($meta, $this->readable($pivot, $request, $object));
+    }
+
+    /**
+     * `$pivot` with each stored date cast to its wire form in the server's output zone, as
+     * the Doctrine provider reads it, for a provider that hands its dates over as stored.
+     *
+     * @param array<string, mixed> $pivot
+     *
+     * @return array<string, mixed>
+     */
+    private function wireValues(array $pivot): array
+    {
+        if (!$this->relation instanceof BelongsToMany) {
+            return $pivot;
+        }
+        foreach ($pivot as $name => $value) {
+            $field = $value instanceof \DateTimeInterface ? $this->relation->pivotField($name) : null;
+            if ($field !== null) {
+                $pivot[$name] = PivotFields::cast($value, $field, $this->outputTimezone);
+            }
+        }
+
+        return $pivot;
     }
 
     /**
@@ -257,21 +284,5 @@ final class PivotMetaSerializer implements
         }
 
         return $this->pivotMap;
-    }
-
-    /**
-     * The pivot map keyed by each member's comparable wire id, so a uuid-shaped id the
-     * provider keyed in capitals matches the lower case the member renders in.
-     *
-     * @return array<string, array<string, mixed>>
-     */
-    private function byComparableId(): array
-    {
-        $keyed = [];
-        foreach ($this->map() as $id => $values) {
-            $keyed[StoredIdForms::comparable($id)] = $values;
-        }
-
-        return $keyed;
     }
 }

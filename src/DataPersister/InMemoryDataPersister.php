@@ -539,7 +539,8 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
 
         $rows = [];
         foreach ($members as $member) {
-            $key = $this->idOf($member);
+            // Keyed by the id the member's own store keys it by, the wire id a linkage names.
+            $key = StoredIdForms::comparable(InMemoryStore::holding($member)?->idOf($member) ?? $this->idOf($member));
             $creating = !isset($held[$key]);
             $row = $held[$key] ?? [];
             $values = $sent[$key] ?? [];

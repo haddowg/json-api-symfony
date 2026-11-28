@@ -1045,6 +1045,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     $parent,
                     $this->outputTimezone?->timezone(),
                     source: $this->pivotSource($server, $type, $parent, $relatedProvider),
+                    memberEncoder: $this->idEncoders?->encoderFor($relatedType),
                 );
 
                 // A cursor (keyset) pivot page: the provider minted the boundary
@@ -1540,7 +1541,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // The pivot meta rides the WINDOWED page's map: a PivotMetaSerializer over the
             // page-1 pivot map, bound to this relationship by the PivotParentSerializer.
-            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider));
+            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType));
             $parentSerializer = new PivotParentSerializer(
                 $server->serializerFor($type),
                 $relationshipName,
@@ -1950,7 +1951,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             default => OperationType::UpdateRelationship,
         }, $relationshipName);
         $pivotSerializer = $pivotResult !== null
-            ? new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider))
+            ? new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType))
             : $this->unqueriedPivot($server, $type, $server->serializerFor($relatedType), $relation, $parent, $relatedProvider, $relatedType);
         $parentSerializer = !$pivotSerializer instanceof PivotMetaSerializer
             ? $server->serializerFor($type)
@@ -2447,7 +2448,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // whose served type carries a different id encoder (BLOCKER).
             // Without pivot storage there is no map: the computed fields render off each parent.
             $maps[$relation->name()] = $stored
-                ? new PivotMapBatch(static fn(): array => $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation), $relatedProvider::class)
+                ? new PivotMapBatch(static fn(): array => $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation), $relatedProvider::class, $this->idEncoders?->encoderFor($type), $this->idEncoders?->encoderFor($relatedType))
                 : null;
         }
 
@@ -2476,7 +2477,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     private function unqueriedPivot(Server $server, string $type, SerializerInterface $related, RelationInterface $relation, object $parent, ?object $relatedProvider, string $relatedType): SerializerInterface
     {
         if ($relatedProvider instanceof PivotAwareProviderInterface && PivotFields::readsStored($relatedProvider, $relation)) {
-            return new PivotMetaSerializer($related, $relatedProvider->fetchRelatedPivotMap($relatedType, $parent, $relation), $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider));
+            return new PivotMetaSerializer($related, $relatedProvider->fetchRelatedPivotMap($relatedType, $parent, $relation), $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType));
         }
 
         return PivotFields::hasComputed($relation)

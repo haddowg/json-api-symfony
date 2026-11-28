@@ -181,7 +181,9 @@ abstract class OutputTimezoneConformanceTestCase extends JsonApiFunctionalTestCa
     #[Group('spec:multi-server')]
     public function aPivotDateRendersInTheServerZoneOnEveryPath(): void
     {
-        $expected = ['bookedAt' => '2024-04-01T19:00:00+09:00', 'confirmedAt' => '2024-04-02T06:00:00-04:00', 'contractOn' => '2024-04-03'];
+        // A pivot hook reads the stored date as its wire string in the server's zone on
+        // every store, as `booking` reports.
+        $expected = ['bookedAt' => '2024-04-01T19:00:00+09:00', 'confirmedAt' => '2024-04-02T06:00:00-04:00', 'contractOn' => '2024-04-03', 'booking' => 'string 2024-04-01T19:00:00+09:00'];
 
         foreach (['/tokyo/shared-gigs/1/performers', '/tokyo/shared-gigs/1/relationships/performers'] as $path) {
             $data = $this->fetchDocument($path)['data'] ?? null;

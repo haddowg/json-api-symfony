@@ -98,7 +98,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($related, $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null, source: $map === null ? null : new PivotRowSource($this->inner->getType($object), $parentWireId, $map->provider)),
+                new PivotMetaSerializer($related, $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null, source: $map === null ? null : new PivotRowSource($this->inner->getType($object), $parentWireId, $map->provider), memberEncoder: $map?->memberEncoder),
             );
         }
 

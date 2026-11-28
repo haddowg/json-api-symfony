@@ -1279,7 +1279,8 @@ the hook changes only how the field is read: it keeps its column on the associat
 entity, stays writable from the linkage `meta`, and remains a `sort=` key and a `pivot.`
 filter column. Its hook receives the same `PivotEdge`, never the association entity, with
 the link's stored values under `pivot`, so it reads its own stored value from
-`$edge->pivot['<name>']`:
+`$edge->pivot['<name>']`. Each value is in its wire form, the form the response renders, on
+every provider: a date is the string the field renders in the server's output zone:
 
 ```php
 BelongsToMany::make('crew', 'members')
