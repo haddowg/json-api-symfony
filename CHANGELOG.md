@@ -1,5 +1,34 @@
 # Changelog
 
+## [2.26.0](https://github.com/haddowg/json-api-symfony/compare/v2.25.0...v2.26.0) (2026-11-28)
+
+
+### Features
+
+* pass the served parent type first to fetchRelatedPivotMap, a signature change a custom PivotAwareProviderInterface implementation must follow ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+
+
+### Bug Fixes
+
+* carry meta.pivot on every pivot linkage that renders data, not only an included or withData one ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* cast in-memory pivot dates in the requesting server's output zone ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* fail the cache warm-up for a relation with stored pivot fields whose related provider doesn't implement PivotAwareProviderInterface ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* fail the render with a logged 500 for a member of a stored pivot relation that has no pivot row ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* find a guid key stored in capitals through WhereIdIn and WhereIdNotIn on Doctrine ([b87b3bf](https://github.com/haddowg/json-api-symfony/commit/b87b3bf217a62fe3023d2fe69735ddcb0c2f2d8b))
+* find a pivot row whose provider keys it by the stored id behind an id encoder ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* give a pivot field's hook every stored value in its wire form on every provider ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* match a uuid id in either case at a WhereThrough or WhereThroughIn ending on a relationship on Doctrine ([b87b3bf](https://github.com/haddowg/json-api-symfony/commit/b87b3bf217a62fe3023d2fe69735ddcb0c2f2d8b))
+* match a uuid-shaped value in either case on Where, WhereIn and WhereNotIn over a text column ([b87b3bf](https://github.com/haddowg/json-api-symfony/commit/b87b3bf217a62fe3023d2fe69735ddcb0c2f2d8b))
+* render an empty meta.pivot object for a member whose every pivot field is hidden ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* render computed pivot fields on a relationship write's 200 linkage ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* store pivot rows in the in-memory provider and render their stored fields on every path ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+
+
+### Performance Improvements
+
+* render an included pivot page's meta.pivot from the values its read loaded instead of reading the pivot rows again ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+* skip the profile window for a relation the sparse fieldset leaves out ([5cab1f5](https://github.com/haddowg/json-api-symfony/commit/5cab1f551ac7f713848a060b9f93851bd8c407d5))
+
 ## [2.25.0](https://github.com/haddowg/json-api-symfony/compare/v2.24.1...v2.25.0) (2026-11-27)
 
 
