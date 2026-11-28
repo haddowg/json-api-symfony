@@ -84,12 +84,12 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
                 continue;
             }
 
-            // The slice of the batched map for THIS parent, keyed by member id so the
-            // PivotMetaSerializer looks up only the members the linkage renders (and
-            // composes with any windowing/filtering for free). The batch is read only
-            // when a member's pivot renders, so a links-only linkage reads nothing.
+            // Each member the linkage renders looks up its own values, so the lookup
+            // composes with any windowing or filtering. The batch is read only when a
+            // member's pivot renders, so a links-only linkage reads nothing.
             $map = $this->maps[$name] ?? null;
-            $mapForThisParent = $map === null ? [] : static fn(): array => $map->forParent($parentWireId);
+            $parent = \is_object($object) ? $object : null;
+            $mapForThisParent = $map === null ? [] : static fn(string $memberId): ?array => $map->rowFor($parentWireId, $parent, $memberId);
 
             // A member whose own relations render pivots further down renders through
             // the decorator for its include path.
@@ -98,7 +98,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($related, $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null, source: $map === null ? null : new PivotRowSource($this->inner->getType($object), $parentWireId, $map->provider), memberEncoder: $map?->memberEncoder),
+                new PivotMetaSerializer($related, $mapForThisParent, $relation, $parent, $this->outputTimezone, computedOnly: $map === null, source: $map === null ? null : new PivotRowSource($this->inner->getType($object), $parentWireId, $map->provider), memberEncoder: $map?->memberEncoder),
             );
         }
 

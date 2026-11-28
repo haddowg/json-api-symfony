@@ -523,9 +523,12 @@ linkage data renders, and the provider of its related type reads the stored valu
 and then the member's. `supportsPivot()` says whether it also queries the rows, filtering,
 sorting and paging a related read by a pivot field through `fetchRelatedPivotCollection()`;
 answer `false` and the related reads take the plain path, as the in-memory provider's do. A
-relation with stored pivot fields whose related type's provider doesn't implement the
-interface fails the cache warm-up, naming the relation, the type, the provider and the
-interface.
+related read that returns a `PivotCollectionResult`, from `fetchRelatedPivotCollection()` or
+from `fetchRelatedCollectionBatch()` for an include, carries its members' values, so they
+render from that page, and `fetchRelatedPivotMapBatch()` is asked only for the parents whose
+page didn't carry them. A relation with stored pivot fields whose related type's provider
+doesn't implement the interface fails the cache warm-up, naming the relation, the type, the
+provider and the interface.
 
 ### Loading many rows by id
 

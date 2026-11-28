@@ -38,7 +38,7 @@ final class PivotKeysTest extends TestCase
         self::assertSame(['shirt' => 7], PivotKeys::find(['player-1' => ['shirt' => 7]], 'player-1', $encoder));
         self::assertNull(PivotKeys::find(['1' => ['shirt' => 7]], 'player-1', null));
 
-        $batch = new PivotMapBatch(static fn(): array => ['1' => ['1' => ['shirt' => 7]]], 'App\\Provider', $encoder);
+        $batch = new PivotMapBatch(static fn(array $parents): array => ['1' => ['1' => ['shirt' => 7]]], [new \stdClass()], 'App\\Provider', $encoder);
         self::assertSame(['1' => ['shirt' => 7]], $batch->forParent('player-1'));
     }
 

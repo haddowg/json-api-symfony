@@ -82,12 +82,9 @@ final class PivotMetaSerializer implements
 {
     use ForwardsSerializerInterfaces;
 
-    /** @var array<string, array<string, mixed>>|null */
-    private ?array $resolved = null;
-
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
-     * @param array<string, array<string, mixed>>|(\Closure(): array<string, array<string, mixed>>) $pivotMap `memberId => [pivotField => typed value]`, or the read that returns it when a member first renders
+     * @param array<array-key, array<string, mixed>>|(\Closure(string): (array<string, mixed>|null)) $pivotMap `memberId => [pivotField => typed value]`, or the lookup that returns a member's values by its id when it renders
      * @param RelationInterface|null               $relation the pivot relation whose fields decide what renders; without it the map renders as given
      * @param object|null                          $parent   the parent whose relation renders, which hooked pivot fields read
      * @param string|null                          $outputTimezone the server's default output zone a hooked date field adopts
@@ -134,7 +131,7 @@ final class PivotMetaSerializer implements
         }
 
         $id = $this->inner->getId($object);
-        $pivot = PivotKeys::find($this->map(), $id, $this->memberEncoder);
+        $pivot = $this->pivotMap instanceof \Closure ? ($this->pivotMap)($id) : PivotKeys::find($this->pivotMap, $id, $this->memberEncoder);
         if (!$this->relation instanceof BelongsToMany) {
             // Without the relation the map renders as given, an empty entry as an object.
             if ($pivot !== null) {
@@ -270,19 +267,5 @@ final class PivotMetaSerializer implements
     protected function inner(): SerializerInterface
     {
         return $this->inner;
-    }
-
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function map(): array
-    {
-        if ($this->pivotMap instanceof \Closure) {
-            $this->resolved ??= ($this->pivotMap)();
-
-            return $this->resolved;
-        }
-
-        return $this->pivotMap;
     }
 }

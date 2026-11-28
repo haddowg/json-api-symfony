@@ -325,6 +325,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->relationshipCount?->set(null);
         $this->preloaded = [];
         $this->includeProfiles = [];
+        $this->readRouter?->forgetPivotMaps();
         // Related rows are judged against their own read gate afresh per operation.
         $serverName = $this->contextServerName($operation->context());
         $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $serverName);
@@ -2318,9 +2319,10 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
      * the Doctrine and in-memory providers both read; computed pivot fields render
      * everywhere.
      *
-     * For each relation it binds a {@see PivotMapBatch} that reads the per-parent pivot
-     * map for the whole page in ONE statement (no N+1) the first time a member's pivot
-     * renders, so a links-only linkage reads nothing. The decorator slices each
+     * For each relation it binds a {@see PivotMapBatch} holding the pivot values the
+     * relation's pages were read with, and reading the rest for the whole page in ONE
+     * statement (no N+1) the first time a member's pivot renders, so a links-only linkage
+     * reads nothing. The decorator slices each
      * relation's map to a parent's own entry (keyed by the member's id) at render time,
      * so the map composes with any linkage windowing or filtering for free.
      *
@@ -2448,7 +2450,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // whose served type carries a different id encoder (BLOCKER).
             // Without pivot storage there is no map: the computed fields render off each parent.
             $maps[$relation->name()] = $stored
-                ? new PivotMapBatch(static fn(): array => $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation), $relatedProvider::class, $this->idEncoders?->encoderFor($type), $this->idEncoders?->encoderFor($relatedType))
+                ? new PivotMapBatch(
+                    static fn(array $parents): array => $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $parents, $relation),
+                    $items,
+                    $relatedProvider::class,
+                    $this->idEncoders?->encoderFor($type),
+                    $this->idEncoders?->encoderFor($relatedType),
+                    $this->loadedPivotMaps($type, $relation, $items),
+                )
                 : null;
         }
 
@@ -2457,6 +2466,31 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps, $this->outputTimezone?->timezone(), $nested, $only);
+    }
+
+    /**
+     * The pivot values the pages of `$relation` read in this operation loaded with each of
+     * `$items`, keyed by parent object id, so a member renders them without a second read.
+     *
+     * @param list<object> $items
+     *
+     * @return array<int, array<array-key, array<string, mixed>>>
+     */
+    private function loadedPivotMaps(string $type, RelationInterface $relation, array $items): array
+    {
+        if ($this->readRouter === null) {
+            return [];
+        }
+
+        $loaded = [];
+        foreach ($items as $item) {
+            $map = $this->readRouter->loadedPivotMap($type, $relation->name(), $item);
+            if ($map !== null) {
+                $loaded[\spl_object_id($item)] = $map;
+            }
+        }
+
+        return $loaded;
     }
 
     /**
