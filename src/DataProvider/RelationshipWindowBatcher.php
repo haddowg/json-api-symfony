@@ -513,6 +513,20 @@ final class RelationshipWindowBatcher
     }
 
     /**
+     * Whether the request's sparse fieldset for `$type` renders `$relation`: it names it, or
+     * the relation is declared `notSparseField()` and the fieldset isn't the empty one, and a
+     * sparse-by-default relation only when named.
+     */
+    private static function inFieldset(JsonApiRequestInterface $request, string $type, RelationInterface $relation): bool
+    {
+        $named = $request->getIncludedFields($type);
+        $rendered = $request->isIncludedField($type, $relation->name())
+            || (!$relation->isSparseField() && !\in_array('', $named, true));
+
+        return $rendered && (!$relation->isSparseByDefault() || \in_array($relation->name(), $named, true));
+    }
+
+    /**
      * The to-many relations among `$allRelations` that may be windowed under the
      * profile: a monomorphic to-many whose linkage DATA renders for THIS request.
      * A polymorphic to-many (members span types — no single related provider or shared
@@ -561,11 +575,13 @@ final class RelationshipWindowBatcher
                 continue;
             }
 
-            // Window only when this to-many's linkage data renders for the request:
-            // included at the primary level (default-includes honoured) or withData.
+            // Window only when this to-many's linkage data renders for the request: included at
+            // the primary level (default-includes honoured), or withData and kept by the sparse
+            // fieldset. An included relation is windowed whatever the fieldset, since its page
+            // decides the included members.
             if (
-                $relation->emitsDataOnlyWhenLoaded()
-                && !$request->isIncludedRelationship('', $relation->name(), $defaults)
+                !$request->isIncludedRelationship('', $relation->name(), $defaults)
+                && ($relation->emitsDataOnlyWhenLoaded() || !self::inFieldset($request, $type, $relation))
             ) {
                 continue;
             }

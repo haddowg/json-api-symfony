@@ -81,27 +81,25 @@ final class DoctrinePivotBatchQueryBudgetTest extends JsonApiFunctionalTestCase
     }
 
     /**
-     * @return iterable<string, array{string, string, int|null}>
+     * @return iterable<string, array{string, string, int}>
      */
     public static function pivotPageIncludes(): iterable
     {
         yield 'include' => ['include=orderedTracks&fields[playlists]=orderedTracks', 'application/vnd.api+json', 1];
-        // The profile windows every relation whose data renders, each in its own query.
-        yield 'include under the profile' => ['include=orderedTracks&fields[playlists]=orderedTracks', self::ACCEPT, null];
-        yield 'include with a pivot sort' => ['include=orderedTracks&fields[playlists]=orderedTracks&relatedQuery[orderedTracks][sort]=-position', self::ACCEPT, null];
+        // The profile windows only the relations the fieldset keeps.
+        yield 'include under the profile' => ['include=orderedTracks&fields[playlists]=orderedTracks', self::ACCEPT, 1];
+        yield 'include with a pivot sort' => ['include=orderedTracks&fields[playlists]=orderedTracks&relatedQuery[orderedTracks][sort]=-position', self::ACCEPT, 1];
     }
 
     #[Test]
     #[Group('spec:fetching-includes')]
     #[DataProvider('pivotPageIncludes')]
-    public function anIncludedPivotPageRendersThePivotValuesItsWindowRead(string $query, string $accept, ?int $pivotQueries): void
+    public function anIncludedPivotPageRendersThePivotValuesItsWindowRead(string $query, string $accept, int $pivotQueries): void
     {
         $statements = $this->statements('/playlists?page[size]=12&' . $query, $accept, $document);
 
         $pivotReads = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'playlist_track')));
-        if ($pivotQueries !== null) {
-            self::assertCount($pivotQueries, $pivotReads, \implode("\n", $statements));
-        }
+        self::assertCount($pivotQueries, $pivotReads, \implode("\n", $statements));
         foreach ($pivotReads as $sql) {
             self::assertStringContainsStringIgnoringCase('ROW_NUMBER() OVER (PARTITION BY', $sql, 'the pivot values are read with the window only');
         }
@@ -137,6 +135,27 @@ final class DoctrinePivotBatchQueryBudgetTest extends JsonApiFunctionalTestCase
             }
         }
         self::assertGreaterThan(0, $members);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sparse-fieldsets')]
+    public function aRelationTheFieldsetLeavesOutIsNotWindowedButItsRelatedQueryStillApplies(): void
+    {
+        // dataTracks renders data unasked, so without a fieldset the profile windows it.
+        $all = $this->statements('/playlists?page[size]=12');
+        self::assertNotSame([], \array_filter($all, static fn(string $sql): bool => \str_contains($sql, 'playlist_track')), \implode("\n", $all));
+
+        $statements = $this->statements('/playlists?page[size]=12&fields[playlists]=name&relatedQuery[dataTracks][filter][title]=a&relatedQuery[dataTracks][sort]=-position');
+        self::assertSame([], \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'playlist_track'))), \implode("\n", $statements));
+
+        // A pivot filter on a relation that renders no data still narrows nothing and passes.
+        $this->statements('/playlists?fields[playlists]=name&relatedQuery[orderedTracks][filter][position]=1');
+
+        // A key the relation doesn't know is still the related endpoint's 400.
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $response = $this->handle(self::BASE_URI . '/playlists?fields[playlists]=name&relatedQuery[dataTracks][filter][nope]=1', extraServer: ['HTTP_ACCEPT' => self::ACCEPT]);
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
     }
 
     /**
