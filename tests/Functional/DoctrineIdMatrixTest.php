@@ -122,11 +122,23 @@ final class DoctrineIdMatrixTest extends IdMatrixConformanceTestCase
         self::assertStringContainsString('i0_.guidownerid in (', $notes[0]);
     }
 
+    #[Test]
+    public function anEqualityFilterBindsBothCasesAndComparesTheColumnAsStored(): void
+    {
+        $wire = \strtolower(self::CAPITAL_GUID);
+        $statements = $this->statementsOf('/im-notes?filter[guidOwnerIs]=' . $wire . '&filter[strOwnerNot]=' . $wire);
+        $filtered = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'from im_note') && \str_contains($sql, 'guidownerid in')));
+
+        self::assertCount(1, $filtered, \implode("\n", $statements));
+        self::assertStringContainsString('strownerid not in (', $filtered[0]);
+        self::assertStringNotContainsString('lower(', $filtered[0]);
+    }
+
     protected function seedCapitalGuidOwner(): void
     {
         $entityManager = $this->entityManager();
         $entityManager->persist(new ImGuidOwner(self::CAPITAL_GUID, 'Capital'));
-        $note = new ImNote(5, 'Five', null, null, null, null, self::CAPITAL_GUID, null, null, null, 'im-posts', 2);
+        $note = new ImNote(5, 'Five', null, self::CAPITAL_GUID, null, null, self::CAPITAL_GUID, null, null, null, 'im-posts', 2);
         $note->refType = 'im-guid-owners';
         $note->refId = self::CAPITAL_GUID;
         $entityManager->persist($note);

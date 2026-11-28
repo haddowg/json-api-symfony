@@ -30,7 +30,7 @@ final class InMemoryIdMatrixTest extends IdMatrixConformanceTestCase
     protected function seedCapitalGuidOwner(): void
     {
         IdMatrixInMemoryTestKernel::provider('im-guid-owners')->store()->save(new ImGuidOwner(self::CAPITAL_GUID, 'Capital'));
-        $note = new ImNote(5, 'Five', null, null, null, null, self::CAPITAL_GUID, null, null, null, 'im-posts', 2);
+        $note = new ImNote(5, 'Five', null, self::CAPITAL_GUID, null, null, self::CAPITAL_GUID, null, null, null, 'im-posts', 2);
         $note->refType = 'im-guid-owners';
         $note->refId = self::CAPITAL_GUID;
         IdMatrixInMemoryTestKernel::provider('im-notes')->store()->save($note);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
 use haddowg\JsonApi\Schema\Profile\CountableProfile;
+use haddowg\JsonApi\Schema\Profile\RelationshipQueriesProfile;
 use haddowg\JsonApiBundle\Tests\Functional\App\IdMatrix\IdMatrixSeed;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -21,6 +22,7 @@ use PHPUnit\Framework\Attributes\Test;
 abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
 {
     private const string COUNTS_ACCEPT = 'application/vnd.api+json;profile="' . CountableProfile::URI . '"';
+    private const string QUERIES_ACCEPT = 'application/vnd.api+json;profile="' . RelationshipQueriesProfile::URI . '"';
 
     /**
      * @return iterable<string, array{string}>
@@ -257,6 +259,79 @@ abstract class IdMatrixConformanceTestCase extends JsonApiFunctionalTestCase
         self::assertSame(['type' => 'im-guid-owners', 'id' => $wire], $this->relationship($note['data'] ?? null, 'ref')['data'] ?? null);
         self::assertSame(['im-guid-owners:' . $wire], $this->includedKeys($note));
         self::assertSame(['5'], $this->ids($this->fetch('/im-notes?filter[ref][type]=im-guid-owners&filter[ref][id]=' . $wire)['data'] ?? null));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function uuidColumns(): iterable
+    {
+        yield 'guid' => ['guid'];
+        yield 'string' => ['str'];
+    }
+
+    #[Test]
+    #[DataProvider('uuidColumns')]
+    public function anEqualityFilterMatchesAUuidStoredInCapitalsByItsLowerCase(string $kind): void
+    {
+        $this->seedCapitalGuidOwner();
+        $wire = \strtolower(self::CAPITAL_GUID);
+
+        foreach ([$wire, self::CAPITAL_GUID] as $sent) {
+            if ($kind === 'guid') {
+                self::assertSame(['5'], $this->sortedIds('/im-notes?filter[guidOwner]=' . $sent), $sent);
+            }
+            self::assertSame(['5'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerIs]=' . $sent), $sent);
+            // Note 4 holds no key, so a negated filter leaves it out too.
+            self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNot]=' . $sent), $sent);
+            self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNotIn]=' . $sent), $sent);
+        }
+        self::assertSame($kind === 'guid' ? ['1', '2', '5'] : ['1', '2', '3', '5'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerNotIn]=' . IdMatrixSeed::wireId('guid', 1)));
+
+        // An ordered operator still compares exactly, and capitals sort first.
+        self::assertSame($kind === 'guid' ? [] : ['1', '2', '3'], $this->sortedIds('/im-notes?filter[' . $kind . 'OwnerFrom]=' . $wire));
+    }
+
+    #[Test]
+    public function anIdFilterMatchesAGuidStoredInCapitalsInEitherCase(): void
+    {
+        $this->seedCapitalGuidOwner();
+        $wire = \strtolower(self::CAPITAL_GUID);
+
+        foreach ([$wire, self::CAPITAL_GUID] as $sent) {
+            self::assertSame([$wire], $this->sortedIds('/im-guid-owners?filter[id]=' . $sent), $sent);
+            self::assertSame($this->sorted([IdMatrixSeed::wireId('guid', 0), IdMatrixSeed::wireId('guid', 1), IdMatrixSeed::wireId('guid', 2)]), $this->sortedIds('/im-guid-owners?filter[notId]=' . $sent), $sent);
+        }
+    }
+
+    #[Test]
+    public function anEqualityFilterMatchesAUuidStoredInLowerCaseByItsCapitals(): void
+    {
+        $upper = \strtoupper(IdMatrixSeed::wireId('guid', 0));
+
+        self::assertSame(['1', '2'], $this->sortedIds('/im-notes?filter[guidOwner]=' . $upper));
+        self::assertSame(['1', '2'], $this->sortedIds('/im-notes?filter[guidOwnerIs]=' . $upper));
+        self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[guidOwner]=' . $upper . ',' . IdMatrixSeed::wireId('guid', 1)));
+        // A uuid column reads either case as the same uuid.
+        self::assertSame(['1', '2'], $this->sortedIds('/im-notes?filter[uuidOwner]=' . \strtoupper(IdMatrixSeed::wireId('uuid', 0))));
+        self::assertSame(['3'], $this->sortedIds('/im-notes?filter[guidOwnerNot]=' . $upper));
+        self::assertSame(['3'], $this->sortedIds('/im-notes?filter[guidOwnerNotIn]=' . $upper));
+
+        // The related endpoint and a relatedQuery filter run through the same handler.
+        $owner = IdMatrixSeed::wireId('guid', 0);
+        self::assertSame(['1', '2'], $this->ids($this->fetch('/im-guid-owners/' . $owner . '/notes?filter[guidOwnerIs]=' . $upper)['data'] ?? null));
+        $owners = $this->rowsById($this->fetch('/im-guid-owners?include=notes&relatedQuery[notes][filter][guidOwnerNot]=' . $upper, self::QUERIES_ACCEPT));
+        self::assertSame([], $this->ids($this->relationship($owners[$owner] ?? null, 'notes')['data'] ?? null));
+        self::assertSame(['3'], $this->ids($this->relationship($owners[IdMatrixSeed::wireId('guid', 1)] ?? null, 'notes')['data'] ?? null));
+    }
+
+    #[Test]
+    public function anEqualityFilterComparesAValueThatIsNoUuidExactly(): void
+    {
+        self::assertSame(['1', '2'], $this->sortedIds('/im-notes?filter[strOwnerIs]=alpha'));
+        self::assertSame([], $this->sortedIds('/im-notes?filter[strOwnerIs]=ALPHA'));
+        self::assertSame([], $this->sortedIds('/im-notes?filter[strOwner]=ALPHA'));
+        self::assertSame(['1', '2', '3'], $this->sortedIds('/im-notes?filter[strOwnerNot]=ALPHA'));
     }
 
     #[Test]
