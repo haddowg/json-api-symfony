@@ -54,6 +54,7 @@ abstract class ComputedPivotConformanceTestCase extends JsonApiFunctionalTestCas
         ]]);
 
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame(['2' => ['role' => 'Reds:Grace', 'badge' => 'GRACE']], $this->pivots($this->decode($response)));
         self::assertSame(['2' => ['role' => 'Reds:Grace', 'badge' => 'GRACE']], $this->pivots($this->get('/cp-crews/1/relationships/members')));
     }
 
@@ -64,10 +65,12 @@ abstract class ComputedPivotConformanceTestCase extends JsonApiFunctionalTestCas
             ['type' => 'cp-members', 'id' => '2', 'meta' => ['pivot' => ['badge' => 'X']]],
         ]]);
         self::assertSame(200, $added->getStatusCode(), (string) $added->getContent());
+        self::assertSame(['1' => self::ADA, '2' => ['role' => 'Reds:Grace', 'badge' => 'GRACE'], '3' => self::LINUS], $this->pivots($this->decode($added)));
         self::assertSame(['1', '2', '3'], $this->sortedIds($this->get('/cp-crews/1/relationships/members')));
 
         $removed = $this->handle('/cp-crews/1/relationships/members', 'DELETE', ['data' => [['type' => 'cp-members', 'id' => '1']]]);
         self::assertSame(200, $removed->getStatusCode(), (string) $removed->getContent());
+        self::assertSame(['2' => ['role' => 'Reds:Grace', 'badge' => 'GRACE'], '3' => self::LINUS], $this->pivots($this->decode($removed)));
         self::assertSame(['2', '3'], $this->sortedIds($this->get('/cp-crews/1/relationships/members')));
     }
 

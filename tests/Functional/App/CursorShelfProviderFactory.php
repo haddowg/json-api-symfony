@@ -42,6 +42,17 @@ final class CursorShelfProviderFactory
             $shelves[(string) $id] = new CursorShelf((int) $id, $widgets);
         }
 
-        return new InMemoryDataProvider('cursorShelves', $shelves);
+        $provider = new InMemoryDataProvider('cursorShelves', $shelves);
+        // Each membership's `slot` pivot row, as the Doctrine association entity holds it.
+        $slots = CursorShelfFixtures::slots();
+        foreach (CursorShelfFixtures::data() as $id => $widgetIds) {
+            $rows = [];
+            foreach ($widgetIds as $widgetId) {
+                $rows[(string) $widgetId] = ['slot' => $slots[(int) $widgetId] ?? null];
+            }
+            $provider->store()->writePivotRows($shelves[(string) $id], 'widgets', $rows);
+        }
+
+        return $provider;
     }
 }

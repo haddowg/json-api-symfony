@@ -2060,6 +2060,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
      * @return array<string, array<string, mixed>>
      */
     public function fetchRelatedPivotMap(
+        string $parentType,
         string $relatedType,
         object $parent,
         RelationInterface $relation,
@@ -2716,7 +2717,7 @@ final class DoctrineDataProvider implements DataProviderInterface, PivotAwarePro
             return [];
         }
 
-        return $this->fetchRelatedPivotMap($relatedType, $parent, $relation);
+        return $this->fetchRelatedPivotMap($type, $relatedType, $parent, $relation);
     }
 
     /**

@@ -21,6 +21,7 @@ use haddowg\JsonApi\Pagination\CursorWindow;
 use haddowg\JsonApi\Pagination\OffsetWindow;
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
@@ -58,8 +59,9 @@ use haddowg\JsonApiBundle\Action\ActionDescriptor;
  * @template-covariant TModel of object = object
  *
  * @implements DataProviderInterface<object>
+ * @implements PivotAwareProviderInterface<object>
  */
-final class InMemoryDataProvider implements DataProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsByForeignKeyInterface
+final class InMemoryDataProvider implements DataProviderInterface, PivotAwareProviderInterface, ScopesRelatedReadsInterface, FetchesByIdsInterface, AdmitsIdsInterface, QueriesFilteredCollectionInterface, LinkRowQueryInterface, LinkRowKeysInterface, ReadsByForeignKeyInterface
 {
     /**
      * @var InMemoryStore<TModel>
@@ -655,17 +657,88 @@ final class InMemoryDataProvider implements DataProviderInterface, ScopesRelated
     }
 
     /**
-     * The in-memory store holds no pivot data — a pivot column needs an association
-     * entity the in-memory provider cannot model (the documented in-memory pivot
-     * boundary, mirrored on the write side by {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister}).
-     * So it returns no existing pivot meta: the validator then treats every incoming
-     * member as new (create context), exactly as before the pivot merge-before-validate.
+     * The stored values of `$parent`'s pivot rows for `$relation`, keyed by the member's id:
+     * the rows the {@see \haddowg\JsonApiBundle\DataPersister\InMemoryDataPersister} wrote
+     * into the store holding the parent, so the validator merges a member's incoming pivot
+     * over the row it already has.
      *
      * @return array<string, array<string, mixed>>
      */
     public function fetchRelationshipPivot(string $type, object $parent, RelationInterface $relation): array
     {
-        return [];
+        return self::pivotValues($parent, $relation, keepDates: false);
+    }
+
+    /**
+     * The in-memory store reads its pivot rows but doesn't query them, so no pivot field is a
+     * filter or sort key here and the related reads take the plain path.
+     */
+    public function supportsPivot(string $relatedType, RelationInterface $relation): bool
+    {
+        return false;
+    }
+
+    /**
+     * Never called, as {@see supportsPivot()} routes every related read to the plain path.
+     */
+    public function fetchRelatedPivotCollection(
+        string $relatedType,
+        object $parent,
+        RelationInterface $relation,
+        CollectionCriteria $criteria,
+        JsonApiRequestInterface $request,
+    ): PivotCollectionResult|PivotCursorCollectionResult {
+        throw new \LogicException(\sprintf('The in-memory provider of "%s" does not query pivot rows.', $relatedType));
+    }
+
+    public function fetchRelatedPivotMap(string $parentType, string $relatedType, object $parent, RelationInterface $relation): array
+    {
+        return self::pivotValues($parent, $relation);
+    }
+
+    /**
+     * Each parent's stored pivot values for `$relation`, keyed by the parent's id in the store
+     * holding it, then the member's. The rows live with the parent, so this provider answers
+     * for parents held by any in-memory store.
+     */
+    public function fetchRelatedPivotMapBatch(string $parentType, string $relatedType, array $parents, RelationInterface $relation): array
+    {
+        $maps = [];
+        foreach ($parents as $parent) {
+            $id = InMemoryStore::holding($parent)?->idOf($parent);
+            $values = self::pivotValues($parent, $relation);
+            if ($id !== null && $values !== []) {
+                $maps[$id] = $values;
+            }
+        }
+
+        return $maps;
+    }
+
+    /**
+     * `$parent`'s stored pivot rows for `$relation`, each keyed by the stored field's name and
+     * cast to its wire value. A date is kept as it is stored unless `$keepDates` is false,
+     * since this provider doesn't know the output zone of the server rendering it: the
+     * pivot meta serializer casts it in that zone, as the Doctrine provider casts its dates.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function pivotValues(object $parent, RelationInterface $relation, bool $keepDates = true): array
+    {
+        $store = InMemoryStore::holding($parent);
+        if ($store === null || !$relation instanceof BelongsToMany || $relation->storedPivotFields() === []) {
+            return [];
+        }
+
+        $values = [];
+        foreach ($store->pivotRows($parent, $relation->column() ?? $relation->name()) as $member => $row) {
+            foreach ($relation->storedPivotFields() as $field) {
+                $value = $row[$field->column() ?? $field->name()] ?? null;
+                $values[(string) $member][$field->name()] = $keepDates && $value instanceof \DateTimeInterface ? $value : PivotFields::cast($value, $field);
+            }
+        }
+
+        return $values;
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace haddowg\JsonApiBundle\Tests\Functional;
 
+use haddowg\JsonApiBundle\Testing\SchemaConformanceTrait;
+use haddowg\JsonApiBundle\Testing\SchemaDocumentKind;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\HttpFoundation\Request;
@@ -23,9 +25,17 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  */
 abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTestCase
 {
+    use SchemaConformanceTrait;
+
     protected const array REDS = ['1' => ['role' => 'Reds:Ada', 'badge' => 'ADA'], '3' => ['role' => 'Reds:Linus']];
     protected const array BLUES = ['1' => ['role' => 'Blues:Ada', 'badge' => 'ADA'], '2' => ['role' => 'Blues:Grace', 'badge' => 'GRACE']];
     protected const array ARK = ['3' => ['post' => 'Ark:Linus']];
+    /**
+     * The pivot relations of each type, whose linkage members carry `meta.pivot` wherever
+     * their data renders.
+     */
+    protected const array PIVOT_RELATIONS = ['cp-crews' => ['members', 'staff', 'quietMembers'], 'cp-ships' => ['members'], 'cp-fleets' => ['hands']];
+
     protected const array BARK = ['1' => ['post' => 'Bark:Ada'], '2' => ['post' => 'Bark:Grace']];
 
     #[Test]
@@ -424,6 +434,143 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
         }
     }
 
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function everyRenderedPivotLinkageCarriesItsPivot(): void
+    {
+        // A crew's `staff` reads its members whatever was included, so its linkage renders
+        // with no include, and in memory every relation's linkage does.
+        foreach ([
+            '/cp-crews/1',
+            '/cp-crews/1?include=members',
+            '/cp-crews',
+            '/cp-crews?include=members',
+            '/cp-crews/2?fields[cp-crews]=staff',
+            '/cp-crews/2?fields[cp-crews]=name,staff&include=members',
+            '/cp-ships?include=crew',
+            '/cp-ships/2?include=crew',
+            '/cp-ships?include=crew&fields[cp-crews]=staff',
+            '/cp-fleets/1?include=ships.crew,flagship.crew',
+            '/cp-fleets?include=ships.crew',
+            '/cp-fleets/1/units',
+            '/cp-fleets/1/vessels',
+            '/cp-fleets/1?include=units,vessels',
+            '/cp-ships/2/crew',
+            '/cp-ships/2/crew?include=members',
+            '/cp-fleets/1/ships?include=crew',
+        ] as $path) {
+            self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($this->get($path), $path), $path);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function aMemberWhoseEveryPivotFieldIsHiddenCarriesAnEmptyPivotObject(): void
+    {
+        // Linus is crew 1's member whose only `quietMembers` pivot field is hidden.
+        foreach (['/cp-crews/1?include=quietMembers', '/cp-crews/1/quietMembers', '/cp-crews/1/relationships/quietMembers'] as $path) {
+            $response = $this->handle($path);
+            self::assertSame(200, $response->getStatusCode(), $path);
+            $content = (string) $response->getContent();
+
+            self::assertStringContainsString('"type":"cp-members","id":"3","meta":{"pivot":{}}', $content, $path);
+            self::assertStringContainsString('"meta":{"pivot":{"badge":"ADA"}}', $content, $path);
+            self::assertStringNotContainsString('"pivot":[]', $content, $path);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:openapi')]
+    public function everyRenderedPivotLinkageMatchesTheResponseSchema(): void
+    {
+        // The response schema requires `meta.pivot` on each member of a pivot linkage.
+        foreach ([
+            ['/cp-crews/1?include=members,quietMembers', 'cp-crews', SchemaDocumentKind::Single],
+            ['/cp-crews', 'cp-crews', SchemaDocumentKind::Collection],
+            ['/cp-ships?include=crew', 'cp-ships', SchemaDocumentKind::Collection],
+            ['/cp-fleets/1?include=hands,ships.crew', 'cp-fleets', SchemaDocumentKind::Single],
+        ] as [$path, $type, $kind]) {
+            $response = $this->handle($path);
+            self::assertSame(200, $response->getStatusCode(), $path);
+            $this->assertResponseMatchesGeneratedSchema($response, $type, $kind);
+        }
+
+        foreach (['members', 'staff', 'quietMembers'] as $relation) {
+            $response = $this->handle('/cp-crews/1/relationships/' . $relation);
+            self::assertSame(200, $response->getStatusCode(), $relation);
+            $this->assertResponseMatchesGeneratedSchema($response, 'cp-crews', SchemaDocumentKind::Relationship, $relation);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:crud')]
+    public function aWriteResponseCarriesThePivotOfEveryLinkageItRenders(): void
+    {
+        $response = $this->handle('/cp-crews/2', 'PATCH', ['data' => [
+            'type' => 'cp-crews',
+            'id' => '2',
+            'attributes' => ['name' => 'Navy'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($this->decode($response), 'update'));
+
+        // The members a create writes are loaded on the new crew, so their linkage renders.
+        $response = $this->handle('/cp-crews', 'POST', ['data' => [
+            'type' => 'cp-crews',
+            'id' => '7',
+            'attributes' => ['name' => 'Greens'],
+            'relationships' => ['members' => ['data' => [['type' => 'cp-members', 'id' => '1']]]],
+        ]]);
+        self::assertSame(201, $response->getStatusCode(), (string) $response->getContent());
+        $document = $this->decode($response);
+        self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($document, 'create'));
+        self::assertSame(['1' => ['role' => 'Greens:Ada', 'badge' => 'ADA']], $this->pivots($this->linkage($document, 'members')));
+
+        $response = $this->handle('/cp-ships/2?include=crew', 'PATCH', ['data' => [
+            'type' => 'cp-ships',
+            'id' => '2',
+            'attributes' => ['name' => 'Barque'],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($this->decode($response), 'nested update'));
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    public function anActionResponseCarriesThePivotOfEveryLinkageItRenders(): void
+    {
+        foreach ([
+            ['/cp-crews/2/-actions/muster', 200],
+            ['/cp-ships/2/-actions/muster?include=crew', 200],
+            ['/cp-ships/-actions/roll?include=crew', 200],
+            ['/cp-ships/-actions/mix', 200],
+            ['/cp-crews/1/-actions/queue', 202],
+        ] as [$path, $status]) {
+            self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($this->action($path, $status), $path), $path);
+        }
+    }
+
+    #[Test]
+    #[Group('spec:atomic')]
+    public function anAtomicResultCarriesThePivotOfEveryLinkageItRenders(): void
+    {
+        $result = $this->atomicResult(['op' => 'update', 'ref' => ['type' => 'cp-crews', 'id' => '2'], 'data' => [
+            'type' => 'cp-crews',
+            'id' => '2',
+            'attributes' => ['name' => 'Navy'],
+        ]]);
+        self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($result, 'atomic update'));
+
+        $result = $this->atomicResult(['op' => 'add', 'data' => [
+            'type' => 'cp-crews',
+            'id' => '8',
+            'attributes' => ['name' => 'Golds'],
+            'relationships' => ['members' => ['data' => [['type' => 'cp-members', 'id' => '2']]]],
+        ]]);
+        self::assertGreaterThan(0, $this->assertEveryLinkageCarriesItsPivot($result, 'atomic add'));
+        self::assertSame(['2' => ['role' => 'Golds:Grace', 'badge' => 'GRACE']], $this->pivots($this->linkage($result, 'members')));
+    }
+
     /**
      * The document a custom action answers with.
      *
@@ -611,5 +758,45 @@ abstract class NestedPivotIncludeConformanceTestCase extends JsonApiFunctionalTe
         \ksort($pivots);
 
         return $pivots;
+    }
+
+    /**
+     * Asserts that every member of every pivot relation's linkage the document renders,
+     * on its primary data and on its included resources, carries a `meta.pivot` object. Returns
+     * how many linkage members it checked.
+     *
+     * @param array<string, mixed> $document
+     */
+    protected function assertEveryLinkageCarriesItsPivot(array $document, string $context): int
+    {
+        $data = $document['data'] ?? null;
+        $resources = \is_array($data) ? (\array_is_list($data) ? $data : [$data]) : [];
+        $checked = 0;
+        foreach ([...$resources, ...$this->included($document)] as $resource) {
+            self::assertIsArray($resource);
+            $relationships = $resource['relationships'] ?? [];
+            self::assertIsArray($relationships);
+            $type = $resource['type'] ?? null;
+            self::assertIsString($type);
+            foreach (static::PIVOT_RELATIONS[$type] ?? [] as $relation) {
+                $relationship = $relationships[$relation] ?? null;
+                if (!\is_array($relationship) || !\array_key_exists('data', $relationship)) {
+                    continue;
+                }
+                self::assertIsArray($relationship['data']);
+                foreach ($relationship['data'] as $member) {
+                    self::assertIsArray($member);
+                    $meta = $member['meta'] ?? null;
+                    $where = \sprintf('%s: %s %s %s member %s', $context, \json_encode($type), \json_encode($resource['id'] ?? null), $relation, \json_encode($member));
+                    self::assertIsArray($meta, $where);
+                    // An empty object decodes to an empty array: a member may have every field hidden.
+                    self::assertArrayHasKey('pivot', $meta, $where);
+                    self::assertIsArray($meta['pivot'], $where);
+                    ++$checked;
+                }
+            }
+        }
+
+        return $checked;
     }
 }

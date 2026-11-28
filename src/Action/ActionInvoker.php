@@ -563,16 +563,16 @@ final readonly class ActionInvoker
     private function guardMembership(Server $server, AbstractResource $resource, RelationInterface&GuardsMembershipInterface $relation, ToManyRelationship $linkage, JsonApiRequestInterface $body, object $current, bool $stored): void
     {
         if (!$stored) {
-            $relation->assertMembershipUnchanged($body, $current, CurrentMembers::of($server, $this->providers, $current, $relation, $body), $linkage);
+            $relation->assertMembershipUnchanged($body, $current, CurrentMembers::of($server, $this->providers, $current, $resource::$type, $relation, $body), $linkage);
 
             return;
         }
 
-        $scoped = $this->linkageGuard?->scope($server, $current, $relation, $linkage, Mode::Replace, $body) ?? $linkage;
+        $scoped = $this->linkageGuard?->scope($server, $current, $resource::$type, $relation, $linkage, Mode::Replace, $body) ?? $linkage;
         \assert($scoped instanceof ToManyRelationship);
         $members = $this->readRouter?->readsByForeignKey($relation) === true
             ? $this->readRouter->foreignKeyMembers($server, $resource::$type, $current, $relation, $body)
-            : CurrentMembers::of($server, $this->providers, $current, $relation, $body);
+            : CurrentMembers::of($server, $this->providers, $current, $resource::$type, $relation, $body);
         $relation->assertMembershipUnchanged($body, $current, $members, $scoped);
     }
 

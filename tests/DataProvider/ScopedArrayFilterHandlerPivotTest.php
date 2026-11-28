@@ -17,8 +17,8 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The in-memory provider holds no pivot rows, so a filter whose path reaches one is
- * unrecognised there, as a pivot column filter is.
+ * The in-memory provider doesn't query its pivot rows, so a filter whose path reaches
+ * one is unrecognised there, as a pivot column filter is.
  */
 final class ScopedArrayFilterHandlerPivotTest extends TestCase
 {

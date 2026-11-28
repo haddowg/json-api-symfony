@@ -138,9 +138,9 @@ interface DataProviderInterface
   serializer's wire id rather than the conventional `id` member the default reads).
 - `fetchRelationshipPivot()` returns the stored pivot meta for a pivot relation's
   current members (`relatedId => [pivotField => wire value]`), so the validator folds
-  a stored row under an incoming partial pivot update. A non-pivot relation,
-  or any provider that cannot store pivot data (the in-memory witness), returns `[]` —
-  the `AbstractDataProvider` default.
+  a stored row under an incoming partial pivot update. A non-pivot relation, or a
+  provider that stores no pivot data, returns `[]`, the `AbstractDataProvider` default;
+  the in-memory provider returns the rows it keeps beside the parent.
 
 The interface is `@template-covariant TEntity of object`. A single-type provider
 is `DataProviderInterface<Album>`; a multi-type provider (like the Doctrine one)

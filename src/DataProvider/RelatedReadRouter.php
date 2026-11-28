@@ -51,6 +51,10 @@ use Symfony\Contracts\Service\ResetInterface;
  * path, so the model needs no getter for it. The batch is read once per parent page
  * and request, and {@see forget()} drops it after a write.
  *
+ * A pivot relation's page keeps the pivot values its query read with the members, so
+ * the members' `meta.pivot` renders from them without reading the rows again
+ * ({@see loadedPivotMap()}).
+ *
  * @internal
  */
 final class RelatedReadRouter implements ResetInterface
@@ -67,12 +71,21 @@ final class RelatedReadRouter implements ResetInterface
      */
     private \WeakMap $relatedBatches;
 
+    /**
+     * The pivot values each parent's pivot pages were read with, keyed by parent, then
+     * parent type and relation, then member wire id.
+     *
+     * @var \WeakMap<object, array<string, array<array-key, array<string, mixed>>>>
+     */
+    private \WeakMap $loadedPivots;
+
     public function __construct(
         private readonly DataProviderRegistry $providers,
         ?IdentifiedTargetGuard $guard = null,
     ) {
         $this->guard = $guard ?? new IdentifiedTargetGuard($providers);
         $this->relatedBatches = new \WeakMap();
+        $this->loadedPivots = new \WeakMap();
     }
 
     /**
@@ -90,6 +103,27 @@ final class RelatedReadRouter implements ResetInterface
     public function forget(): void
     {
         $this->relatedBatches = new \WeakMap();
+        $this->forgetPivotMaps();
+    }
+
+    /**
+     * Drops the pivot values read with pivot pages so far.
+     */
+    public function forgetPivotMaps(): void
+    {
+        $this->loadedPivots = new \WeakMap();
+    }
+
+    /**
+     * The pivot values of the members of `$parent`'s pivot `$relationName` (of `$type`)
+     * that a page read in this operation loaded, keyed by member wire id, or `null` when
+     * no page of it was read. Several pages of one relation merge.
+     *
+     * @return array<array-key, array<string, mixed>>|null
+     */
+    public function loadedPivotMap(string $type, string $relationName, object $parent): ?array
+    {
+        return $this->loadedPivots[$parent][$type . "\0" . $relationName] ?? null;
     }
 
     public function reset(): void
@@ -677,11 +711,51 @@ final class RelatedReadRouter implements ResetInterface
     }
 
     /**
-     * Loads `$relation` for every parent per `$criteria`, keyed by parent wire id.
+     * Loads `$relation` for every parent per `$criteria`, keyed by parent wire id. A
+     * pivot relation's pages keep the pivot values they were read with for
+     * {@see loadedPivotMap()}.
      *
      * @param list<object> $parents
      */
     public function batch(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
+    {
+        $batch = $this->load($server, $type, $parents, $relation, $criteria, $request);
+        if ($batch->isSupported() && $this->isPivot($relation)) {
+            $this->rememberPivotMaps($server, $type, $parents, $relation, $batch);
+        }
+
+        return $batch;
+    }
+
+    /**
+     * Keeps the pivot values each parent's page of `$relation` was read with.
+     *
+     * @param list<object> $parents
+     */
+    private function rememberPivotMaps(Server $server, string $type, array $parents, RelationInterface $relation, RelatedBatch $batch): void
+    {
+        $serializer = $server->serializerFor($type);
+        $key = $type . "\0" . $relation->name();
+        foreach ($parents as $parent) {
+            $id = $serializer->getId($parent);
+            if (!$batch->has($id)) {
+                continue;
+            }
+            $result = $batch->for($id);
+            if (!$result instanceof PivotCollectionResult && !$result instanceof PivotCursorCollectionResult) {
+                continue;
+            }
+
+            $maps = $this->loadedPivots[$parent] ?? [];
+            $maps[$key] = $result->pivotMap + ($maps[$key] ?? []);
+            $this->loadedPivots[$parent] = $maps;
+        }
+    }
+
+    /**
+     * @param list<object> $parents
+     */
+    private function load(Server $server, string $type, array $parents, RelationInterface $relation, CollectionCriteria $criteria, JsonApiRequestInterface $request): RelatedBatch
     {
         if ($this->readsByForeignKey($relation)) {
             return $this->foreignKeyBatch($server, $type, $parents, $relation, $criteria, $request);

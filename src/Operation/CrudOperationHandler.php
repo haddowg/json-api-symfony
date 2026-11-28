@@ -142,8 +142,10 @@ use haddowg\JsonApiBundle\Hook\InstantiatesEntityInterface;
 use haddowg\JsonApiBundle\Hook\InstantiatesPivotInterface;
 use haddowg\JsonApiBundle\Serializer\BatchedRelationshipCount;
 use haddowg\JsonApiBundle\Serializer\PivotLinkageParentSerializer;
+use haddowg\JsonApiBundle\Serializer\PivotMapBatch;
 use haddowg\JsonApiBundle\Serializer\PivotMetaSerializer;
 use haddowg\JsonApiBundle\Serializer\PivotParentSerializer;
+use haddowg\JsonApiBundle\Serializer\PivotRowSource;
 use haddowg\JsonApiBundle\Serializer\PivotSubstitutingResolver;
 use haddowg\JsonApiBundle\Serializer\RequestScopedOutputTimezone;
 use haddowg\JsonApiBundle\Serializer\RequestScopedRelationshipCount;
@@ -323,6 +325,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         $this->relationshipCount?->set(null);
         $this->preloaded = [];
         $this->includeProfiles = [];
+        $this->readRouter?->forgetPivotMaps();
         // Related rows are judged against their own read gate afresh per operation.
         $serverName = $this->contextServerName($operation->context());
         $this->relationshipLinkage?->bind($server instanceof Server ? $server : null, $serverName);
@@ -1042,6 +1045,8 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                     $relation,
                     $parent,
                     $this->outputTimezone?->timezone(),
+                    source: $this->pivotSource($server, $type, $parent, $relatedProvider),
+                    memberEncoder: $this->idEncoders?->encoderFor($relatedType),
                 );
 
                 // A cursor (keyset) pivot page: the provider minted the boundary
@@ -1145,10 +1150,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             $serializer = match (true) {
                 $identifiedTypes !== null => $this->identifiedSerializer($relation, $members, $identifiedTypes, $identifiedPivots),
                 $polymorphic => PolymorphicSerializer::forRelation($relation, $members),
-                // Computed pivot fields need no stored row, so they render off the parent
-                // even where no pivot query ran.
-                PivotFields::hasComputed($relation) => new PivotMetaSerializer($this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
-                default => $this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request),
+                default => $this->unqueriedPivot($server, $type, $this->withPivotLinkage($server, $relatedType, $items, $server->serializerFor($relatedType), $request), $relation, $parent, $relatedProvider, $relatedType),
             };
 
             // A cursor (keyset) related page: the provider minted the boundary tokens
@@ -1362,9 +1364,11 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 }
 
                 $serializer = $resolver->serializerFor($types[\spl_object_id($object)]);
-                $pivot = $pivots[\spl_object_id($object)] ?? null;
-
-                return $pivot === null ? $serializer : new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivot]);
+                // A relation with pivot fields gives each member its `meta.pivot`, empty
+                // when every field is hidden for the request.
+                return $relation instanceof PivotRelationInterface && $relation->pivotFields() !== []
+                    ? new PivotMetaSerializer($serializer, [$serializer->getId($object) => $pivots[\spl_object_id($object)] ?? []])
+                    : $serializer;
             },
             PolymorphicSerializer::forRelation($relation, $resolver)->members(),
         );
@@ -1538,7 +1542,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
 
             // The pivot meta rides the WINDOWED page's map: a PivotMetaSerializer over the
             // page-1 pivot map, bound to this relationship by the PivotParentSerializer.
-            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone());
+            $pivotSerializer = new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType));
             $parentSerializer = new PivotParentSerializer(
                 $server->serializerFor($type),
                 $relationshipName,
@@ -1672,15 +1676,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // rendered nothing — a wasted fetch).
             $page = $this->supplyWindowedRelationship($parent, $relationshipName, $items, $paginator, $result, $relWantsCount, $request, $operation->queryParameters());
 
-            // Computed pivot fields render off the parent with no pivot query behind them.
-            $parentSerializer = PivotFields::hasComputed($relation)
-                ? new PivotParentSerializer(
-                    $server->serializerFor($type),
-                    $relationshipName,
-                    $relation,
-                    $server,
-                    new PivotMetaSerializer($server->serializerFor($relatedType), [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true),
-                )
+            $pivotSerializer = $this->unqueriedPivot($server, $type, $server->serializerFor($relatedType), $relation, $parent, $relatedProvider, $relatedType);
+            $parentSerializer = $pivotSerializer instanceof PivotMetaSerializer
+                ? new PivotParentSerializer($server->serializerFor($type), $relationshipName, $relation, $server, $pivotSerializer)
                 : $server->serializerFor($type);
             $response = IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName, $relation->isCountable());
 
@@ -1902,7 +1900,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // Linkage naming a resource the related endpoint does not serve is rejected as
             // missing, and a replace keeps the members the scope hides. The member-move
             // gates run here, ahead of the before hooks.
-            $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
+            $scopedLinkage = $this->linkageGuard?->scope($server, $parent, $type, $relation, $linkage, $mode, $request, atEndpoint: true) ?? $linkage;
             $this->guardMembership($server, $relation, $scopedLinkage, $mode, $body, $parent, $type);
             $this->guardMovedMembers($server, $persister, $type, $request, $parent, $relation, $scopedLinkage, $mode);
 
@@ -1953,13 +1951,12 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             Mode::Remove => OperationType::RemoveRelationship,
             default => OperationType::UpdateRelationship,
         }, $relationshipName);
-        $parentSerializer = $pivotResult === null ? $server->serializerFor($type) : new PivotParentSerializer(
-            $server->serializerFor($type),
-            $relationshipName,
-            $relation,
-            $server,
-            new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone()),
-        );
+        $pivotSerializer = $pivotResult !== null
+            ? new PivotMetaSerializer($server->serializerFor($relatedType), $pivotResult->pivotMap, $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType))
+            : $this->unqueriedPivot($server, $type, $server->serializerFor($relatedType), $relation, $parent, $relatedProvider, $relatedType);
+        $parentSerializer = !$pivotSerializer instanceof PivotMetaSerializer
+            ? $server->serializerFor($type)
+            : new PivotParentSerializer($server->serializerFor($type), $relationshipName, $relation, $server, $pivotSerializer);
         $response = $documentMeta !== null && !$documentMeta->isEmpty()
             ? MetaResponse::fromMeta([])
             : IdentifierResponse::forRelationship($parent, $parentSerializer, $relationshipName);
@@ -2056,7 +2053,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         Mode $mode,
         JsonApiRequestInterface $body,
         object $parent,
-        ?string $type = null,
+        string $type,
     ): void {
         if ($mode !== Mode::Replace
             || !$linkage instanceof ToManyRelationship
@@ -2065,9 +2062,9 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             return;
         }
 
-        $current = $type !== null && $this->readRouter?->readsByForeignKey($relation) === true
+        $current = $this->readRouter?->readsByForeignKey($relation) === true
             ? $this->foreignKeyMembers($server, $type, $parent, $relation, $body)
-            : CurrentMembers::of($server, $this->providers, $parent, $relation, $body);
+            : CurrentMembers::of($server, $this->providers, $parent, $type, $relation, $body);
         $relation->assertMembershipUnchanged($body, $parent, $current, $linkage);
     }
 
@@ -2309,28 +2306,25 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
     /**
      * Wraps `$serializer` in a {@see PivotLinkageParentSerializer} so a primary-resource
      * document renders each `belongsToMany` pivot relation's per-member `meta.pivot` on
-     * the linkage in its relationships block — wherever that relation's linkage DATA
-     * renders — closing the gap where pivot rode the related/relationship endpoints but
-     * NOT a primary document. The resources included below the primary level render
+     * the linkage in its relationships block, wherever that relation's linkage data
+     * renders. The resources included below the primary level render
      * their own pivot relations the same way, at every include path the include walk
      * loaded ({@see pivotLinkageAt()}). Returns `$serializer` untouched (zero
      * overhead) when no rendered resource has such a relation or no request is available.
      *
-     * A pivot relation's linkage data renders for THIS request when it is INCLUDED at
-     * the primary level (`isIncludedRelationship('', name, defaults)` — honouring
-     * default-includes) OR it renders data UNCONDITIONALLY
-     * (`emitsDataOnlyWhenLoaded() === false`, the `withData()` opt-out) — the same
-     * rendered-data gate {@see RelationshipWindowBatcher} uses, so a lazy, links-only,
-     * not-included pivot relation is skipped (no map fetch, no wrap). Only the related
-     * provider that {@see PivotAwareProviderInterface::supportsPivot()} contributes a
-     * map (the Doctrine reference; the in-memory provider does not — the documented
-     * pivot boundary), so a non-pivot type is a clean no-op.
+     * Every readable pivot relation is rebound, whatever makes its linkage data render
+     * for THIS request: an include (default-includes honoured), `withData()`, a value
+     * already loaded on the model, or a relation with no links to render instead. The
+     * related type's {@see PivotAwareProviderInterface} supplies the stored values, which
+     * the Doctrine and in-memory providers both read; computed pivot fields render
+     * everywhere.
      *
-     * For each qualifying relation it reads the BATCHED per-parent pivot map over the
-     * whole page in ONE statement (no N+1) and binds the relation + map into the
-     * decorator, which slices each relation's map to a parent's own entry (keyed by the
-     * member's id) at render time — so the map composes with any linkage windowing or
-     * filtering for free.
+     * For each relation it binds a {@see PivotMapBatch} holding the pivot values the
+     * relation's pages were read with, and reading the rest for the whole page in ONE
+     * statement (no N+1) the first time a member's pivot renders, so a links-only linkage
+     * reads nothing. The decorator slices each
+     * relation's map to a parent's own entry (keyed by the member's id) at render time,
+     * so the map composes with any linkage windowing or filtering for free.
      *
      * Composes with the Relationship-Queries windowed-profile path
      * ({@see applyRelationshipWindows()}, run just BEFORE this): that windows a pivot
@@ -2440,17 +2434,15 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             }
 
             $relatedProvider = $this->providers->forType($relatedType);
-            $stored = $relatedProvider instanceof PivotAwareProviderInterface && $relatedProvider->supportsPivot($relatedType, $relation);
+            $stored = $relatedProvider instanceof PivotAwareProviderInterface && PivotFields::readsStored($relatedProvider, $relation);
             if (!$stored && !PivotFields::hasComputed($relation)) {
                 continue;
             }
 
-            // Render the pivot meta only where this relation's linkage DATA renders:
-            // included at this path (default-includes honoured) or withData().
-            if ($relation->emitsDataOnlyWhenLoaded() && !$included) {
-                continue;
-            }
-
+            // Every member of a pivot relation's linkage carries its `meta.pivot`, whatever
+            // makes the data render: an include, withData(), a value already loaded on the
+            // model or a relation with no links to render instead. The map is read only
+            // once a member's pivot renders, then for every parent at this path at once.
             $relations[$relation->name()] = $relation;
             // The served `$type` (the document being rendered) keys the batched map's
             // outer key by the parent serializer's OWN encoder — never reverse-resolved
@@ -2458,7 +2450,14 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
             // whose served type carries a different id encoder (BLOCKER).
             // Without pivot storage there is no map: the computed fields render off each parent.
             $maps[$relation->name()] = $stored
-                ? $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $items, $relation)
+                ? new PivotMapBatch(
+                    static fn(array $parents): array => $relatedProvider->fetchRelatedPivotMapBatch($type, $relatedType, $parents, $relation),
+                    $items,
+                    $relatedProvider::class,
+                    $this->idEncoders?->encoderFor($type),
+                    $this->idEncoders?->encoderFor($relatedType),
+                    $this->loadedPivotMaps($type, $relation, $items),
+                )
                 : null;
         }
 
@@ -2467,6 +2466,57 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
         }
 
         return new PivotLinkageParentSerializer($serializer, $server, $relations, $maps, $this->outputTimezone?->timezone(), $nested, $only);
+    }
+
+    /**
+     * The pivot values the pages of `$relation` read in this operation loaded with each of
+     * `$items`, keyed by parent object id, so a member renders them without a second read.
+     *
+     * @param list<object> $items
+     *
+     * @return array<int, array<array-key, array<string, mixed>>>
+     */
+    private function loadedPivotMaps(string $type, RelationInterface $relation, array $items): array
+    {
+        if ($this->readRouter === null) {
+            return [];
+        }
+
+        $loaded = [];
+        foreach ($items as $item) {
+            $map = $this->readRouter->loadedPivotMap($type, $relation->name(), $item);
+            if ($map !== null) {
+                $loaded[\spl_object_id($item)] = $map;
+            }
+        }
+
+        return $loaded;
+    }
+
+    /**
+     * The parent of `$type` whose pivot rows `$provider` read, named when a member has none.
+     */
+    private function pivotSource(Server $server, string $type, object $parent, object $provider): PivotRowSource
+    {
+        return new PivotRowSource($type, $server->serializerFor($type)->getId($parent), $provider::class);
+    }
+
+    /**
+     * `$related` decorated so a pivot relation read without a pivot query renders each
+     * member's `meta.pivot`: the stored values its provider reads through
+     * {@see PivotAwareProviderInterface::fetchRelatedPivotMap()} beside the computed fields,
+     * or the computed fields alone where nothing is stored. A relation with no pivot fields
+     * keeps `$related`.
+     */
+    private function unqueriedPivot(Server $server, string $type, SerializerInterface $related, RelationInterface $relation, object $parent, ?object $relatedProvider, string $relatedType): SerializerInterface
+    {
+        if ($relatedProvider instanceof PivotAwareProviderInterface && PivotFields::readsStored($relatedProvider, $relation)) {
+            return new PivotMetaSerializer($related, $relatedProvider->fetchRelatedPivotMap($type, $relatedType, $parent, $relation), $relation, $parent, $this->outputTimezone?->timezone(), source: $this->pivotSource($server, $type, $parent, $relatedProvider), memberEncoder: $this->idEncoders?->encoderFor($relatedType));
+        }
+
+        return PivotFields::hasComputed($relation)
+            ? new PivotMetaSerializer($related, [], $relation, $parent, $this->outputTimezone?->timezone(), computedOnly: true)
+            : $related;
     }
 
     /**
@@ -3130,7 +3180,7 @@ final class CrudOperationHandler implements \haddowg\JsonApi\Operation\Operation
                 $this->serverName($request),
             ));
 
-            $linkage = $this->linkageGuard?->scope($server, $entity, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
+            $linkage = $this->linkageGuard?->scope($server, $entity, $type, $relationship['relation'], $relationship['linkage'], Mode::Replace, $body, $creating)
                 ?? $relationship['linkage'];
             if ($creating === false) {
                 $this->guardMembership($server, $relationship['relation'], $linkage, Mode::Replace, $body, $entity, $type);

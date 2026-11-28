@@ -1,0 +1,3 @@
+# The in-memory provider stores pivot rows, and stored pivot fields need a provider that reads them
+
+Every member of a rendered pivot linkage carries `meta.pivot`, so a stored pivot field with no provider to read it rendered a member without the values the OpenAPI document requires. The in-memory provider now keeps each pivot row beside its parent, writes it from every relationship write, and reads it through `PivotAwareProviderInterface` while answering `supportsPivot()` false, since it doesn't query the rows. That interface on the related type's provider is the one source of stored pivot values on every path, and a relation with stored pivot fields whose related type's provider lacks it fails the cache warm-up.

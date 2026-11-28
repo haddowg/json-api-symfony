@@ -6,8 +6,8 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\BelongsToMany;
+use haddowg\JsonApi\Resource\Field\IdEncoderInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
-use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\ResourceMeta;
 use haddowg\JsonApi\Resource\SerializerResolverAwareInterface;
 use haddowg\JsonApi\Serializer\CountableControlsInterface;
@@ -37,9 +37,9 @@ use haddowg\JsonApiBundle\DataProvider\PivotFields;
  * into BOTH the full resource (the related endpoint `GET /{type}/{id}/{rel}`) and
  * the resource identifier (the relationship-linkage endpoint
  * `GET /{type}/{id}/relationships/{rel}`) — so binding this serializer for those two
- * renders needs no core change. A member with no pivot entry (it should not happen
- * for a pivot collection, but is possible for the relationship endpoint's full
- * association) renders the inner meta unchanged.
+ * renders needs no core change. A member of a relation with stored pivot fields that
+ * the map holds no row for fails the render with {@see MissingPivotRow}, naming the
+ * {@see PivotRowSource} the map came from.
  *
  * The `pivot` key keeps the values namespaced so they never collide with the
  * member resource's own meta, and so a client can tell pivot data from intrinsic
@@ -84,19 +84,23 @@ final class PivotMetaSerializer implements
 
     /**
      * @param SerializerInterface                  $inner    the related type's real serializer
-     * @param array<string, array<string, mixed>>  $pivotMap `memberId => [pivotField => typed value]`
+     * @param array<array-key, array<string, mixed>>|(\Closure(string): (array<string, mixed>|null)) $pivotMap `memberId => [pivotField => typed value]`, or the lookup that returns a member's values by its id when it renders
      * @param RelationInterface|null               $relation the pivot relation whose fields decide what renders; without it the map renders as given
      * @param object|null                          $parent   the parent whose relation renders, which hooked pivot fields read
      * @param string|null                          $outputTimezone the server's default output zone a hooked date field adopts
      * @param bool                                 $computedOnly   whether no pivot storage was read, so only the computed fields render
+     * @param PivotRowSource|null                  $source         the parent and provider the rows came from, named when a member has none
+     * @param IdEncoderInterface|null              $memberEncoder  the related type's id encoder, which decodes a member's wire id to the id the map may be keyed by
      */
     public function __construct(
         private readonly SerializerInterface $inner,
-        private readonly array $pivotMap,
+        private readonly array|\Closure $pivotMap,
         private readonly ?RelationInterface $relation = null,
         private readonly ?object $parent = null,
         private readonly ?string $outputTimezone = null,
         private readonly bool $computedOnly = false,
+        private readonly ?PivotRowSource $source = null,
+        private readonly ?IdEncoderInterface $memberEncoder = null,
     ) {}
 
     public function getMeta(mixed $object, JsonApiRequestInterface $request): array
@@ -127,19 +131,61 @@ final class PivotMetaSerializer implements
         }
 
         $id = $this->inner->getId($object);
-        $pivot = $this->pivotMap[$id] ?? $this->byComparableId()[StoredIdForms::comparable($id)] ?? null;
-        $hooked = $this->parent !== null && $this->relation !== null && PivotFields::readsThroughHook($this->relation);
-        if ($hooked && $this->relation instanceof BelongsToMany && $pivot !== null) {
-            $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
-        }
-        if ($pivot !== null && $this->relation !== null) {
-            $pivot = $this->readable($pivot, $request, $object);
-        }
-        if ($pivot !== null && $pivot !== []) {
-            $meta['pivot'] = $pivot;
+        $pivot = $this->pivotMap instanceof \Closure ? ($this->pivotMap)($id) : PivotKeys::find($this->pivotMap, $id, $this->memberEncoder);
+        if (!$this->relation instanceof BelongsToMany) {
+            // Without the relation the map renders as given, an empty entry as an object.
+            if ($pivot !== null) {
+                $meta['pivot'] = $pivot === [] ? new \stdClass() : $pivot;
+            }
+
+            return $meta;
         }
 
-        return $meta;
+        // A relation declaring no pivot field, an additionalProperties entry at most,
+        // renders none. A member with no row has no stored values to render.
+        if ($this->relation->pivotFields() === []) {
+            return $meta;
+        }
+        if ($pivot === null && $this->relation->storedPivotFields() !== []) {
+            throw MissingPivotRow::for(
+                $this->source->parentType ?? 'unknown',
+                $this->relation->name(),
+                $this->source->parentId ?? 'unknown',
+                $id,
+                $this->source->provider ?? 'its provider',
+            );
+        }
+        // A hook reads every stored value in its wire form, a date in the server's zone,
+        // whichever provider read it.
+        $pivot = $this->wireValues($pivot ?? []);
+        if ($this->parent !== null && PivotFields::readsThroughHook($this->relation)) {
+            $pivot = [...$pivot, ...$this->relation->hookedPivotValues($this->parent, $object, $pivot, $request, $this->outputTimezone)];
+        }
+
+        return $this->withObject($meta, $this->readable($pivot, $request, $object));
+    }
+
+    /**
+     * `$pivot` with each stored date cast to its wire form in the server's output zone, as
+     * the Doctrine provider reads it, for a provider that hands its dates over as stored.
+     *
+     * @param array<string, mixed> $pivot
+     *
+     * @return array<string, mixed>
+     */
+    private function wireValues(array $pivot): array
+    {
+        if (!$this->relation instanceof BelongsToMany) {
+            return $pivot;
+        }
+        foreach ($pivot as $name => $value) {
+            $field = $value instanceof \DateTimeInterface ? $this->relation->pivotField($name) : null;
+            if ($field !== null) {
+                $pivot[$name] = PivotFields::cast($value, $field, $this->outputTimezone);
+            }
+        }
+
+        return $pivot;
     }
 
     /**
@@ -171,9 +217,22 @@ final class PivotMetaSerializer implements
                 $pivot[$field->name()] = $values[$field->name()] ?? null;
             }
         }
-        if ($pivot !== []) {
-            $meta['pivot'] = $pivot;
-        }
+
+        return $this->withObject($meta, $pivot);
+    }
+
+    /**
+     * `$meta` with `$pivot` under `pivot`, an empty object when every field is hidden for
+     * the request, as the response pivot schema requires the member.
+     *
+     * @param array<string, mixed> $meta
+     * @param array<string, mixed> $pivot
+     *
+     * @return array<string, mixed>
+     */
+    private function withObject(array $meta, array $pivot): array
+    {
+        $meta['pivot'] = $pivot === [] ? new \stdClass() : $pivot;
 
         return $meta;
     }
@@ -191,7 +250,10 @@ final class PivotMetaSerializer implements
 
         $readable = [];
         foreach ($this->relation->readablePivotFieldsFor($request, $member) as $field) {
-            $readable[$field->name()] = $pivot[$field->name()] ?? null;
+            $value = $pivot[$field->name()] ?? null;
+            // A provider that leaves a stored date as it is, the in-memory one, gets it cast in
+            // the server's output zone here, as the Doctrine provider casts its own.
+            $readable[$field->name()] = $value instanceof \DateTimeInterface ? PivotFields::cast($value, $field, $this->outputTimezone) : $value;
         }
 
         return $readable;
@@ -205,21 +267,5 @@ final class PivotMetaSerializer implements
     protected function inner(): SerializerInterface
     {
         return $this->inner;
-    }
-
-    /**
-     * The pivot map keyed by each member's comparable wire id, so a uuid-shaped id the
-     * provider keyed in capitals matches the lower case the member renders in.
-     *
-     * @return array<string, array<string, mixed>>
-     */
-    private function byComparableId(): array
-    {
-        $keyed = [];
-        foreach ($this->pivotMap as $id => $values) {
-            $keyed[StoredIdForms::comparable($id)] = $values;
-        }
-
-        return $keyed;
     }
 }

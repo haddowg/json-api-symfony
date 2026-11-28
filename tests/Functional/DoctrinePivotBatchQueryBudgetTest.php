@@ -81,16 +81,114 @@ final class DoctrinePivotBatchQueryBudgetTest extends JsonApiFunctionalTestCase
     }
 
     /**
+     * @return iterable<string, array{string, string, int}>
+     */
+    public static function pivotPageIncludes(): iterable
+    {
+        yield 'include' => ['include=orderedTracks&fields[playlists]=orderedTracks', 'application/vnd.api+json', 1];
+        // The profile windows only the relations the fieldset keeps.
+        yield 'include under the profile' => ['include=orderedTracks&fields[playlists]=orderedTracks', self::ACCEPT, 1];
+        yield 'include with a pivot sort' => ['include=orderedTracks&fields[playlists]=orderedTracks&relatedQuery[orderedTracks][sort]=-position', self::ACCEPT, 1];
+    }
+
+    #[Test]
+    #[Group('spec:fetching-includes')]
+    #[DataProvider('pivotPageIncludes')]
+    public function anIncludedPivotPageRendersThePivotValuesItsWindowRead(string $query, string $accept, int $pivotQueries): void
+    {
+        $statements = $this->statements('/playlists?page[size]=12&' . $query, $accept, $document);
+
+        $pivotReads = \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'playlist_track')));
+        self::assertCount($pivotQueries, $pivotReads, \implode("\n", $statements));
+        foreach ($pivotReads as $sql) {
+            self::assertStringContainsStringIgnoringCase('ROW_NUMBER() OVER (PARTITION BY', $sql, 'the pivot values are read with the window only');
+        }
+
+        // Each member's pivot is the one its relationship endpoint renders.
+        $data = $document['data'] ?? null;
+        self::assertIsArray($data);
+        self::assertCount(12, $data);
+        $members = 0;
+        foreach ($data as $playlist) {
+            self::assertIsArray($playlist);
+            $id = $playlist['id'] ?? null;
+            self::assertIsString($id);
+            $relationships = $playlist['relationships'] ?? null;
+            self::assertIsArray($relationships);
+            $relationship = $relationships['orderedTracks'] ?? null;
+            self::assertIsArray($relationship);
+            $linkage = $relationship['data'] ?? null;
+            self::assertIsArray($linkage);
+
+            $this->statements('/playlists/' . $id . '/relationships/orderedTracks', 'application/vnd.api+json', $endpoint);
+            $expected = [];
+            foreach (\is_array($endpoint['data'] ?? null) ? $endpoint['data'] : [] as $identifier) {
+                [$memberId, $pivot] = $this->pivotOf($identifier);
+                $expected[$memberId] = $pivot;
+            }
+
+            foreach ($linkage as $identifier) {
+                [$memberId, $pivot] = $this->pivotOf($identifier);
+                self::assertArrayHasKey($memberId, $expected);
+                self::assertSame($expected[$memberId], $pivot, "playlist {$id}");
+                ++$members;
+            }
+        }
+        self::assertGreaterThan(0, $members);
+    }
+
+    #[Test]
+    #[Group('spec:fetching-sparse-fieldsets')]
+    public function aRelationTheFieldsetLeavesOutIsNotWindowedButItsRelatedQueryStillApplies(): void
+    {
+        // dataTracks renders data unasked, so without a fieldset the profile windows it.
+        $all = $this->statements('/playlists?page[size]=12');
+        self::assertNotSame([], \array_filter($all, static fn(string $sql): bool => \str_contains($sql, 'playlist_track')), \implode("\n", $all));
+
+        $statements = $this->statements('/playlists?page[size]=12&fields[playlists]=name&relatedQuery[dataTracks][filter][title]=a&relatedQuery[dataTracks][sort]=-position');
+        self::assertSame([], \array_values(\array_filter($statements, static fn(string $sql): bool => \str_contains($sql, 'playlist_track'))), \implode("\n", $statements));
+
+        // A pivot filter on a relation that renders no data still narrows nothing and passes.
+        $this->statements('/playlists?fields[playlists]=name&relatedQuery[orderedTracks][filter][position]=1');
+
+        // A key the relation doesn't know is still the related endpoint's 400.
+        $logger = static::getContainer()->get(QueryCountingLogger::class);
+        self::assertInstanceOf(QueryCountingLogger::class, $logger);
+        $response = $this->handle(self::BASE_URI . '/playlists?fields[playlists]=name&relatedQuery[dataTracks][filter][nope]=1', extraServer: ['HTTP_ACCEPT' => self::ACCEPT]);
+        self::assertSame(400, $response->getStatusCode(), (string) $response->getContent());
+    }
+
+    /**
+     * An identifier's id and `meta.pivot`.
+     *
+     * @return array{string, mixed}
+     */
+    private function pivotOf(mixed $identifier): array
+    {
+        self::assertIsArray($identifier);
+        $id = $identifier['id'] ?? null;
+        self::assertIsString($id);
+        $meta = $identifier['meta'] ?? null;
+        self::assertIsArray($meta);
+
+        return [$id, $meta['pivot'] ?? null];
+    }
+
+    /**
+     * @param array<array-key, mixed>|null $document set to the decoded response
+     *
      * @return list<string>
      */
-    private function statements(string $path): array
+    private function statements(string $path, string $accept = self::ACCEPT, ?array &$document = null): array
     {
         $logger = static::getContainer()->get(QueryCountingLogger::class);
         self::assertInstanceOf(QueryCountingLogger::class, $logger);
         $logger->reset();
 
-        $response = $this->handle(self::BASE_URI . $path, extraServer: ['HTTP_ACCEPT' => self::ACCEPT]);
+        $response = $this->handle(self::BASE_URI . $path, extraServer: ['HTTP_ACCEPT' => $accept]);
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        $decoded = \json_decode((string) $response->getContent(), true);
+        $document = \is_array($decoded) ? $decoded : null;
 
         return $logger->statements();
     }

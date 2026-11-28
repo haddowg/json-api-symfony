@@ -9,6 +9,7 @@ use haddowg\JsonApiBundle\JsonApiBundle;
 use haddowg\JsonApiBundle\Routing\JsonApiRouteLoader;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\GigListingResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\GigResource;
+use haddowg\JsonApiBundle\Tests\Functional\App\Resource\PerformerResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\RawGigResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\SharedGigResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\VenueResource;
@@ -89,6 +90,11 @@ final class OutputTimezoneInMemoryTestKernel extends Kernel
         $services->set(GigListingResource::class);
         $services->set(RawGigResource::class);
         $services->set(SharedGigResource::class);
+        $services->set(PerformerResource::class);
+
+        $services->set('test.performers_provider', InMemoryDataProvider::class)
+            ->factory([OutputTimezoneFixtures::class, 'createPerformers'])
+            ->tag(JsonApiBundle::DATA_PROVIDER_TAG);
 
         $services->set('test.gigs_provider', InMemoryDataProvider::class)
             ->factory([OutputTimezoneFixtures::class, 'createGigs'])

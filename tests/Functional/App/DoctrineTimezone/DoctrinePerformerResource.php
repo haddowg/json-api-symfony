@@ -10,7 +10,7 @@ use haddowg\JsonApi\Resource\Field\Str;
 use haddowg\JsonApi\Resource\Link\DeclaredLink;
 use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 
-#[AsJsonApiResource(entity: PerformerEntity::class, readOnly: true)]
+#[AsJsonApiResource(entity: PerformerEntity::class, server: ['default', 'tokyo', 'raw'], readOnly: true)]
 final class DoctrinePerformerResource extends AbstractResource
 {
     public static string $type = 'performers';

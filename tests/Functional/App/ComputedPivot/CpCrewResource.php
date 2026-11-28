@@ -15,7 +15,8 @@ use haddowg\JsonApi\Resource\Field\Str;
 /**
  * A crew's `members` declares only computed pivot fields, so it is served over its plain
  * join table with no association entity: `role` reads both ends of the link, and `badge`
- * is hidden from one member by predicate.
+ * is hidden from one member by predicate. `quietMembers` reads the same join with only that
+ * `badge`, so the member it is hidden from has no pivot field to show.
  */
 class CpCrewResource extends AbstractResource
 {
@@ -35,11 +36,16 @@ class CpCrewResource extends AbstractResource
                     ->extractUsing(static fn(mixed $edge): string => $edge instanceof PivotEdge && $edge->related instanceof CpMember ? \strtoupper($edge->related->name) : '')
                     ->hidden(static fn(mixed $member, JsonApiRequestInterface $request): bool => $member instanceof CpMember && $member->name === 'Linus'),
             ),
+            BelongsToMany::make('quietMembers', 'cp-members')->storedAs('members')->fields(
+                Str::make('badge')
+                    ->computedUsing(static fn(mixed $edge): string => $edge instanceof PivotEdge && $edge->related instanceof CpMember ? \strtoupper($edge->related->name) : '')
+                    ->hidden(static fn(mixed $member, JsonApiRequestInterface $request): bool => $member instanceof CpMember && $member->name === 'Linus'),
+            ),
         ];
     }
 
     /**
-     * The `staff` pivot: the stored `shift`, the stored `note` read through an extract hook
+     * The `staff` pivot: the required stored `shift`, the stored `note` read through an extract hook
      * that upper-cases it, and the computed `role`.
      *
      * @return list<\haddowg\JsonApi\Resource\Field\FieldBuilderInterface>
@@ -47,7 +53,7 @@ class CpCrewResource extends AbstractResource
     protected static function staffFields(): array
     {
         return [
-            Integer::make('shift'),
+            Integer::make('shift')->required(),
             Str::make('note')->extractUsing(static fn(mixed $edge): ?string => $edge instanceof PivotEdge && \is_string($edge->pivot['note'] ?? null)
                 ? \strtoupper($edge->pivot['note'])
                 : null),

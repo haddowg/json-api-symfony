@@ -6,7 +6,6 @@ namespace haddowg\JsonApiBundle\Serializer;
 
 use haddowg\JsonApi\Request\JsonApiRequestInterface;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
-use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Resource\SerializerResolverInterface;
 use haddowg\JsonApi\Serializer\SerializerInterface;
 
@@ -44,7 +43,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
      * @param SerializerInterface              $inner     the real parent serializer
      * @param SerializerResolverInterface      $resolver  the base resolver (the Server)
      * @param array<string, RelationInterface> $relations the pivot relations to rebind, keyed by relation name
-     * @param array<string, array<string, array<string, array<string, mixed>>>|null> $maps the batched per-parent pivot maps, `relationName => parentWireId => memberId => [field => value]`, `null` for a relation with no pivot storage, which renders its computed fields only
+     * @param array<string, PivotMapBatch|null> $maps the batched per-parent pivot maps keyed by relation name, `null` for a relation with no pivot storage, which renders its computed fields only
      * @param string|null                      $outputTimezone the server's default output zone a computed pivot date field adopts
      * @param array<string, array{relation: RelationInterface, serializers: non-empty-array<string, SerializerInterface>}> $nested the included relations whose related resources render through their own decorators, keyed by relation name, with those decorators keyed by related type
      * @param string|null                      $type      the one type whose resources this decorator rebinds when the inner serializer renders several; a resource of another type renders as the inner serializer renders it
@@ -85,12 +84,12 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
                 continue;
             }
 
-            // The slice of the batched map for THIS parent, keyed by member id so the
-            // PivotMetaSerializer looks up only the members the linkage renders (and
-            // composes with any windowing/filtering for free). Empty when this parent
-            // has no association rows.
+            // Each member the linkage renders looks up its own values, so the lookup
+            // composes with any windowing or filtering. The batch is read only when a
+            // member's pivot renders, so a links-only linkage reads nothing.
             $map = $this->maps[$name] ?? null;
-            $mapForThisParent = $map === null ? [] : $map[$parentWireId] ?? $this->comparableEntry($map, $parentWireId);
+            $parent = \is_object($object) ? $object : null;
+            $mapForThisParent = $map === null ? [] : static fn(string $memberId): ?array => $map->rowFor($parentWireId, $parent, $memberId);
 
             // A member whose own relations render pivots further down renders through
             // the decorator for its include path.
@@ -99,7 +98,7 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
             $relationships[$name] = $this->pivotLinkageBuilder(
                 $relation,
                 $this->resolver,
-                new PivotMetaSerializer($related, $mapForThisParent, $relation, \is_object($object) ? $object : null, $this->outputTimezone, computedOnly: $map === null),
+                new PivotMetaSerializer($related, $mapForThisParent, $relation, $parent, $this->outputTimezone, computedOnly: $map === null, source: $map === null ? null : new PivotRowSource($this->inner->getType($object), $parentWireId, $map->provider), memberEncoder: $map?->memberEncoder),
             );
         }
 
@@ -117,25 +116,5 @@ final class PivotLinkageParentSerializer extends AbstractPivotParentSerializer
     protected function inner(): SerializerInterface
     {
         return $this->inner;
-    }
-
-    /**
-     * The entry of `$map` whose key is `$wireId` in another case, as a uuid-shaped id a
-     * provider keyed in capitals is.
-     *
-     * @param array<string, array<string, array<string, mixed>>> $map
-     *
-     * @return array<string, array<string, mixed>>
-     */
-    private function comparableEntry(array $map, string $wireId): array
-    {
-        $wanted = StoredIdForms::comparable($wireId);
-        foreach ($map as $key => $entry) {
-            if (StoredIdForms::comparable($key) === $wanted) {
-                return $entry;
-            }
-        }
-
-        return [];
     }
 }

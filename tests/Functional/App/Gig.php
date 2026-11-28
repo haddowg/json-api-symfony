@@ -17,5 +17,7 @@ final class Gig
         public ?\DateTimeImmutable $playedOn = null,
         public ?\DateTimeImmutable $doorsAt = null,
         public ?Venue $venue = null,
+        /** @var list<Performer> */
+        public array $performers = [],
     ) {}
 }

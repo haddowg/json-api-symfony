@@ -379,8 +379,8 @@ final class ServableResourceWarmer implements CacheWarmerInterface
      * Checks each to-many's default read order names sorts it accepts, through core's
      * {@see RelationOrderValidator}, and that a key only a `belongsToMany` pivot field
      * answers is read by a provider that sorts its pivot rows. An identified
-     * `MorphToMany` sorts its link rows on every provider. The in-memory provider holds no pivot
-     * data, so a pivot order would otherwise fail every read of the relation, and an order
+     * `MorphToMany` sorts its link rows on every provider. The in-memory provider doesn't query its
+     * pivot rows, so a pivot order would otherwise fail every read of the relation, and an order
      * that reaches through the pivot row would be dropped from every read. Each foreign
      * key is checked here too, through core's {@see RelationForeignKeyValidator}, beside
      * the provider that reads through it.
@@ -420,6 +420,10 @@ final class ServableResourceWarmer implements CacheWarmerInterface
                 ));
             }
         }
+
+        // Every member of a rendered pivot linkage carries its stored pivot values, which
+        // the related type's provider reads, so one that can't fails the warm-up.
+        PivotStorageGuard::check($this->providers, $type, $serializer);
 
         foreach ($serializer->allFields() as $relation) {
             $notice = $relation instanceof MorphToMany ? LinkRowQuery::inMemoryNotice($relation, $server->defaultPaginator()) : null;

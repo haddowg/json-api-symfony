@@ -1,0 +1,3 @@
+# Every rendered pivot linkage carries its pivot
+
+A pivot relation's linkage carried `meta.pivot` only when it was included or declared `withData()`, so a relation whose data rendered for any other reason, a value already on the model, the members a write set or an `extractUsing()` relation, rendered identifiers without the pivot the OpenAPI document types them with. Every readable pivot relation is now rebound wherever its parent renders, and its stored values come from a batch read once per include path and type, deferred until a member's pivot first renders, so a links-only linkage costs no query and a rendered one never costs one per parent.

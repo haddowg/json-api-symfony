@@ -201,17 +201,11 @@ final class DoctrinePivotPrimaryLinkageTest extends JsonApiFunctionalTestCase
 
     #[Test]
     #[Group('spec:fetching-relationships')]
-    public function aLazyNotIncludedPivotRelationCarriesNoPivotEvenIfItsLinkageRenders(): void
+    public function aLazyNotIncludedPivotRelationWhoseLinkageRendersCarriesItsPivot(): void
     {
-        // The rendered-data gate (mirroring the include-windowing gate)
-        // keys off `included OR !emitsDataOnlyWhenLoaded()` — NOT a
-        // post-hoc check of whether the linkage happened to render. `tracks` is a LAZY
-        // pivot relation (emitsDataOnlyWhenLoaded) that is NOT included on a plain
-        // GET /playlists/1, so it is gated OUT of the pivot wrap (no batched pivot-map
-        // read, no rebind) even though this fixture's `extractUsing` makes its linkage
-        // data render. So its linkage carries NO meta.pivot — a deliberate, declared
-        // boundary: opt a pivot relation into primary-document pivot with `withData()`
-        // (or `?include`), exactly as the include-windowing path requires.
+        // `tracks` is lazy and not included on a plain GET /playlists/1, but this
+        // fixture's `extractUsing` makes its linkage data render, so each member carries
+        // its pivot as it would under `?include` or `withData()`.
         $document = $this->fetchDocument('/playlists/1');
 
         $data = $document['data'] ?? null;
@@ -227,9 +221,10 @@ final class DoctrinePivotPrimaryLinkageTest extends JsonApiFunctionalTestCase
 
         foreach ($linkage as $identifier) {
             self::assertIsArray($identifier);
-            $meta = $identifier['meta'] ?? [];
-            self::assertIsArray($meta);
-            self::assertArrayNotHasKey('pivot', $meta, 'a lazy, not-included pivot relation is gated out of the pivot wrap');
+            $meta = $identifier['meta'] ?? null;
+            self::assertIsArray($meta, (string) \json_encode($identifier));
+            self::assertIsArray($meta['pivot'] ?? null, 'a rendered pivot linkage carries its pivot');
+            self::assertArrayHasKey('position', $meta['pivot']);
         }
     }
 

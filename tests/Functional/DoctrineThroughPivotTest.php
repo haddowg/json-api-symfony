@@ -39,7 +39,7 @@ use Symfony\Component\HttpFoundation\Response;
  * leaf, a relation the pivot row holds, a `pivot` mid-path, the related types' scopes and
  * read gates, the sorts, the warm-up refusals, and the deprecated `pivot.`-prefixed
  * traversals beside their migrated forms. Doctrine-only, since the in-memory provider
- * holds no pivot rows; it refuses these filters with a `400`.
+ * doesn't query its pivot rows; it refuses these filters with a `400`.
  *
  * Track 1 is on playlist 1, added by sam and audited, and playlist 2, added by kim. Track
  * 2 is on playlist 1, added by a hidden user. Track 3 is on playlist 3, added by kim.

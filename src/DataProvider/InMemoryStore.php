@@ -60,12 +60,36 @@ final class InMemoryStore
     private int $nextId;
 
     /**
+     * The stored values of each pivot row, keyed by the relation's storage name, then the
+     * parent's comparable id, then the member's.
+     *
+     * @var array<string, array<array-key, array<array-key, array<string, mixed>>>>
+     */
+    private array $pivotRows = [];
+
+    /**
+     * The pivot rows written for a parent the store doesn't key yet, a create whose id the
+     * store mints when it saves it.
+     *
+     * @var \WeakMap<object, array<string, array<array-key, array<string, mixed>>>>|null
+     */
+    private ?\WeakMap $pendingPivotRows = null;
+
+    /**
+     * The store each held object is in, so a read that starts from a parent finds its pivot
+     * rows whichever type's provider reads them.
+     *
+     * @var \WeakMap<object, self>|null
+     */
+    private static ?\WeakMap $holders = null;
+
+    /**
      * The states captured by {@see snapshot()}, innermost last, each a deep clone of the
      * items map plus the id counter. A write inside an Atomic Operations batch opens its
      * own transaction inside the batch's, so they nest: committing the inner one keeps the
      * outer state, and rolling back the outer one still restores it.
      *
-     * @var list<array{items: array<string, object>, nextId: int}>
+     * @var list<array{items: array<string, object>, nextId: int, pivots: array<string, array<array-key, array<array-key, array<string, mixed>>>>}>
      */
     private array $snapshots = [];
 
@@ -90,6 +114,7 @@ final class InMemoryStore
         foreach ($items as $id => $item) {
             $id = StoredIdForms::comparable((string) $id);
             $this->itemsById[$id] = $item;
+            $this->hold($item, replace: false);
             if (\ctype_digit($id)) {
                 $highestNumericId = \max($highestNumericId, (int) $id);
             }
@@ -172,6 +197,12 @@ final class InMemoryStore
         }
 
         $this->itemsById[StoredIdForms::comparable($id)] = $item;
+        $this->hold($item);
+
+        foreach ($this->pendingPivotRows[$item] ?? [] as $storage => $rows) {
+            $this->writePivotRows($item, $storage, $rows);
+        }
+        unset($this->pendingPivotRows[$item]);
     }
 
     public function remove(object $item): void
@@ -211,7 +242,7 @@ final class InMemoryStore
             $items[$id] = $this->deepClone($item);
         }
 
-        $this->snapshots[] = ['items' => $items, 'nextId' => $this->nextId];
+        $this->snapshots[] = ['items' => $items, 'nextId' => $this->nextId, 'pivots' => $this->pivotRows];
     }
 
     /**
@@ -236,6 +267,8 @@ final class InMemoryStore
 
         $this->itemsById = $snapshot['items'];
         $this->nextId = $snapshot['nextId'];
+        $this->pivotRows = $snapshot['pivots'];
+        \array_map($this->hold(...), $this->itemsById);
     }
 
     /**
@@ -294,6 +327,91 @@ final class InMemoryStore
     {
         $this->itemsById = $items;
         $this->nextId = $nextId;
+        \array_map($this->hold(...), $this->itemsById);
+    }
+
+    /**
+     * The stored pivot rows of every relation, for a coordinated snapshot.
+     *
+     * @return array<string, array<array-key, array<array-key, array<string, mixed>>>>
+     */
+    public function exportPivotRows(): array
+    {
+        return $this->pivotRows;
+    }
+
+    /**
+     * Replaces the stored pivot rows with a coordinated snapshot's.
+     *
+     * @param array<string, array<array-key, array<array-key, array<string, mixed>>>> $rows
+     */
+    public function importPivotRows(array $rows): void
+    {
+        $this->pivotRows = $rows;
+    }
+
+    /**
+     * The store `$item` is held in, or `null` when no store holds it.
+     */
+    public static function holding(object $item): ?self
+    {
+        return self::$holders[$item] ?? null;
+    }
+
+    /**
+     * The stored values of `$parent`'s pivot rows for the relation stored as `$storage`,
+     * keyed by the member's comparable id, each keyed by column.
+     *
+     * @return array<array-key, array<string, mixed>>
+     */
+    public function pivotRows(object $parent, string $storage): array
+    {
+        $id = $this->idOf($parent);
+        if ($id === null) {
+            return $this->pendingPivotRows[$parent][$storage] ?? [];
+        }
+
+        return $this->pivotRows[$storage][StoredIdForms::comparable($id)] ?? [];
+    }
+
+    /**
+     * Replaces `$parent`'s pivot rows for the relation stored as `$storage`, and makes this
+     * the store readers find the parent's rows in.
+     *
+     * @param array<array-key, array<string, mixed>> $rows keyed by the member's comparable id, each keyed by column
+     */
+    public function writePivotRows(object $parent, string $storage, array $rows): void
+    {
+        $this->hold($parent);
+        $id = $this->idOf($parent);
+        if ($id === null) {
+            $this->pendingPivotRows ??= new \WeakMap();
+            $pending = $this->pendingPivotRows[$parent] ?? [];
+            $pending[$storage] = $rows;
+            $this->pendingPivotRows[$parent] = $pending;
+
+            return;
+        }
+
+        if ($rows === []) {
+            unset($this->pivotRows[$storage][StoredIdForms::comparable($id)]);
+
+            return;
+        }
+
+        $this->pivotRows[$storage][StoredIdForms::comparable($id)] = $rows;
+    }
+
+    /**
+     * Records this store as the one holding `$item`. A store seeded with objects another
+     * store already holds, as a read over a relation's members builds, leaves them there.
+     */
+    private function hold(object $item, bool $replace = true): void
+    {
+        self::$holders ??= new \WeakMap();
+        if ($replace || !isset(self::$holders[$item])) {
+            self::$holders[$item] = $this;
+        }
     }
 
     /**

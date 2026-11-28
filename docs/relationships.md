@@ -559,7 +559,7 @@ by the pivot field's stored column on every path, include batching included. The
 container warm-up checks the keys, so a typo fails `cache:clear` rather than every
 read. It also refuses a pivot key, or a sort that reaches through the pivot row such as
 `SortByField::make('added', 'addedAt')->through('pivot')`, on a relation whose related type
-is served by a provider that doesn't read pivot rows, such as the in-memory provider, and
+is served by a provider that doesn't query pivot rows, such as the in-memory provider, and
 names the relation and the sort. The OpenAPI
 document states the relation's own order as the `default` of the `sort` parameter on
 its relationship and related endpoints; the related type's default isn't the
@@ -945,9 +945,8 @@ It renders each member's pivot values as `meta.pivot` on the related endpoint
 (`GET /playlists/1/tracks`), the relationship-linkage endpoint (`GET
 /playlists/1/relationships/tracks`), the `200` linkage a write to that endpoint answers
 with, which lists the members the relationship endpoint then serves, **and in a primary-resource document's
-relationships block** — wherever that relation's linkage data renders, i.e. when it is
-`?include`d (`GET /playlists/1?include=tracks`) or renders data by default
-(`withData()`). It also makes `?sort=position` recognised on that related endpoint
+relationships block**, wherever that relation's linkage data renders. It also makes `?sort=position`
+recognised on that related endpoint
 (routed to the pivot column) — sorting is zero-config:
 
 ```jsonc
@@ -960,25 +959,30 @@ relationships block** — wherever that relation's linkage data renders, i.e. wh
 ]
 ```
 
-> **On a primary document, pivot rides the linkage where its data renders.** In a
-> primary-resource document (`GET /playlists/1`) a pivot relation's linkage carries
-> `meta.pivot` on each identifier **only where its linkage data renders** — when the
-> relation is `?include`d, or renders data by default (`withData()`). A lazy,
-> not-included relation renders links-only and carries no pivot, so opt it in with
-> `withData()` (or request it with `?include`) to surface pivot without an `?include`.
-> Stored pivot data is Doctrine-only (it needs an association entity): the in-memory
-> provider never renders a stored field, on any endpoint or document, a stored field
-> with an `extractUsing()` hook included. A
+> **Pivot rides every linkage that renders data.** Whatever makes a pivot relation's
+> linkage data render, each identifier carries its `meta.pivot`: an `?include`,
+> `withData()`, a relation whose value is already loaded on the model (a collection
+> something else initialised, the members a write just set, or an `extractUsing()`
+> relation the data layer can't see into), or a relation with no links to render
+> instead (`withoutLinks()`). A lazy relation whose data stays out of the document renders links only, and
+> no pivot is read for it. The pivot values are read once per include path for every
+> parent at it, and only when a member's pivot renders.
+> The related type's provider reads the stored values on every path, through
+> `PivotAwareProviderInterface`. Doctrine reads them from the association entity; the
+> in-memory provider keeps each pivot row beside its parent, writes it from every
+> relationship write, create, update and atomic operation, and reads it back. A
 > [computed pivot field](#computed-pivot-fields) needs no storage, so both providers
-> render it, on an all-computed and a mixed relation alike.
+> render it, on an all-computed and a mixed relation alike. A relation with stored pivot
+> fields whose related type's provider doesn't implement `PivotAwareProviderInterface`
+> fails the cache warm-up, naming the relation, the type, the provider and the interface.
 
 The same holds wherever the parent renders, not only as the primary resource. A pivot
 relation reached through a nested include (`GET /users/1?include=playlists.tracks`, at
 any depth) carries `meta.pivot` on its linkage and on its included members, and so does
 one included from a related endpoint (`GET /users/1/playlists?include=tracks`), a
-`MorphToMany` related endpoint among them, in the response to a create or update
-that names `?include`, or in a custom action's response, its `202` job resource
-included. The pivot map is read once per
+`MorphToMany` related endpoint among them, in the response to a create or update, in a
+relationship write's `200` linkage, in an Atomic Operations result, or in a custom
+action's response, its `202` job resource included. The pivot map is read once per
 include path for every parent at it, never once per parent.
 
 An included member is one resource object, so when two parents link to the same member
@@ -992,8 +996,13 @@ Each member's `meta.pivot` carries the pivot fields core's
 hidden nor write-only for the request. A `hidden(when:)` predicate on a pivot field
 receives the related member (the track, not the join row), so it can hide a field on
 one member and show it on another. Every field it returns renders, `null` when the join
-row holds no value for it. That matches the response pivot schema in the
-[OpenAPI document](openapi.md), which lists those fields as `required`.
+row holds no value for it. A member the provider returns no pivot row for is a data
+integrity fault: the response fails with a logged `500` naming the type, the relation, the
+parent and member ids and the provider, and the error's debug meta says the same. A member whose
+every field is hidden for the request still carries `"pivot": {}`, and a relation that
+declares only an `AdditionalProperties` entry renders no pivot. That matches the response
+schema in the [OpenAPI document](openapi.md), which requires `meta.pivot` on each member
+of a pivot relation's response linkage and lists its fields as `required`.
 
 A `DateTime` pivot field follows the server's
 [`output_timezone`](configuration.md#output_timezone) like an attribute does: it
@@ -1053,8 +1062,8 @@ itself can't express. A path that ends on one of the row's associations compares
 id of the entity it reaches, bound with that id's Doctrine type. Its wire ids decode
 with the encoder of the type the relation names for that entity: the related type for
 the row's far side, the parent type for its near side. These filters apply
-where the pivot column filters do, and the in-memory provider, which has no pivot row,
-rejects them with a `400` on every path, as it does the column ones.
+where the pivot column filters do, and the in-memory provider, which doesn't query its
+pivot rows, rejects them with a `400` on every path, as it does the column ones.
 
 A related type that declares a relation stored as `pivot` would make such a path
 ambiguous, so the cache warm-up fails naming the filter and the relation. Store that
@@ -1256,11 +1265,9 @@ relationship endpoint and a primary document's linkage. No `through()` is needed
 fields with stored ones still needs its association entity, as before, and reads the
 stored fields from it.
 
-The in-memory provider keeps no pivot storage, so it renders only the computed fields of
-`meta.pivot`, evaluated with no stored values (`$edge->pivot` is empty), on an
-all-computed and a mixed relation alike. It never renders a stored field, a stored field
-with an `extractUsing()` hook included, so a mixed relation's members carry just their
-computed fields there.
+The in-memory provider renders a mixed relation's stored fields from the pivot rows it
+keeps beside each parent, a stored field with an `extractUsing()` hook included, and its
+computed fields beside them.
 
 A computed pivot field is **read-only**. A write that sends it in the linkage `meta` is
 ignored, exactly like a read-only field, so a relation with only computed fields is
@@ -1272,7 +1279,8 @@ the hook changes only how the field is read: it keeps its column on the associat
 entity, stays writable from the linkage `meta`, and remains a `sort=` key and a `pivot.`
 filter column. Its hook receives the same `PivotEdge`, never the association entity, with
 the link's stored values under `pivot`, so it reads its own stored value from
-`$edge->pivot['<name>']`:
+`$edge->pivot['<name>']`. Each value is in its wire form, the form the response renders, on
+every provider: a date is the string the field renders in the server's output zone:
 
 ```php
 BelongsToMany::make('crew', 'members')
@@ -1334,14 +1342,12 @@ relationship-endpoint `POST`/`PATCH` and the whole-resource `POST`/`PATCH` alike
 
 **Boundaries.**
 
-- **Doctrine-only.** Stored pivot data requires an association entity to query and write. The
-  in-memory provider does not support it: a pivot `?filter`/`?sort` key is
-  unrecognised there (`400`), no stored pivot field renders in `meta.pivot`, and a
-  pivot-meta **write is ignored** (the relation is a plain to-many in-memory — there is
-  no join row to hold it). Its `meta.pivot` carries only the
-  [computed pivot fields](#computed-pivot-fields), which need no storage. A
-  `belongsToMany` *without* `fields()` (and any `HasMany`) keeps the plain
-  related-collection behaviour on both providers.
+- **Querying is Doctrine-only.** Filtering, sorting and paging by a pivot field needs an
+  association entity to query. The in-memory provider keeps its pivot rows beside each
+  parent and doesn't query them: a pivot `?filter`/`?sort` key is unrecognised there
+  (`400`), while a write stores the pivot fields each member sends and every response
+  renders them in `meta.pivot`. A `belongsToMany` *without* `fields()` (and any
+  `HasMany`) keeps the plain related-collection behaviour on both providers.
 - **Scoped to the pivot relation's related endpoint.** A pivot key is unrecognised on
   the primary `/{relatedType}` collection (`400`), exactly like a relation-scoped key.
 - **One pivot row per member.** `meta.pivot` is a single per-member value set, not a

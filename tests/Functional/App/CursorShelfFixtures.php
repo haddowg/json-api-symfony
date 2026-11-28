@@ -51,9 +51,8 @@ final class CursorShelfFixtures
      * BOTH the id order and every widget-attribute order (it cannot pass by
      * accident), and whose ties force the far PK tiebreak mid-walk.
      *
-     * The in-memory provider is not pivot-aware, so it never reads these — the
-     * documented boundary the in-memory half of the suite asserts (`?sort=slot`
-     * is a 400 there).
+     * The in-memory provider keeps these on its pivot rows but doesn't query them,
+     * so `?sort=slot` is a 400 there.
      *
      * @return array<int, int>
      */

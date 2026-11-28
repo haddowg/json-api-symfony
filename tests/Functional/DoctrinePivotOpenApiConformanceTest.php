@@ -13,8 +13,8 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * Responses that render `meta.pivot` validate against the generated response pivot
  * component (`<Type><Rel>Pivot`), which requires every readable pivot field and
- * admits `null` where the server guarantees no value. Doctrine only: the in-memory
- * provider holds no pivot data, so it renders no `meta.pivot` to check.
+ * admits `null` where the server guarantees no value. Doctrine only: this fixture's
+ * pivot columns live on its association entity.
  *
  * `playlists.tracks` declares a nullable writable `weight`, a read-only `addedAt`, a
  * hidden `note`, a write-only `source`, a `curator` write-only by predicate and a

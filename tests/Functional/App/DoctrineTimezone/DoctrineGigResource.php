@@ -12,8 +12,7 @@ use haddowg\JsonApiBundle\Attribute\AsJsonApiResource;
 use haddowg\JsonApiBundle\Tests\Functional\App\Resource\BaseGigResource;
 
 /**
- * The Doctrine `gigs`: the shared fields plus a pivot-backed `performers` relation
- * (pivot meta is Doctrine-only). `bookedAt` takes the server zone, `confirmedAt` keeps
+ * The Doctrine `gigs`: the shared fields plus a pivot-backed `performers` relation. `bookedAt` takes the server zone, `confirmedAt` keeps
  * its own, `contractOn` is a `Date` the server zone leaves alone. `bookedPerformers`
  * is the same association with `withData()`, so its linkage and pivot meta render on
  * the primary document, which puts the bundle's pivot parent serializer in front of

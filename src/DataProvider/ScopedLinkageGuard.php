@@ -78,6 +78,7 @@ final class ScopedLinkageGuard
     public function scope(
         Server $server,
         object $parent,
+        string $parentType,
         RelationInterface $relation,
         ToOneRelationship|ToManyRelationship $linkage,
         Mode $mode,
@@ -126,7 +127,7 @@ final class ScopedLinkageGuard
                     $current[] = [$type, RelatedReadRouter::wireId($server->serializerFor($type), $key)];
                 }
             }
-        } elseif (($pivotIds = CurrentMembers::throughPivot($this->providers, $parent, $relation)) !== null) {
+        } elseif (($pivotIds = CurrentMembers::throughPivot($this->providers, $parentType, $parent, $relation)) !== null) {
             // A pivot's value holds its association rows, so its members are read through them.
             foreach ($pivotIds as $id) {
                 $current[] = [$relation->relatedTypes()[0], $id];

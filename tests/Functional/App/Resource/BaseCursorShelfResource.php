@@ -30,10 +30,10 @@ use haddowg\JsonApi\Resource\Field\Integer;
  * conformance surface. Over the Doctrine kernel the relation
  * pins its association entity (see the Doctrine subclass's
  * {@see pivotWidgets()} override), so the fetch runs the pivot keyset
- * push-down and each member renders `meta.pivot`; over the in-memory kernel the
- * provider is not pivot-aware (the documented boundary), so the members read
- * off the parent's `widgets` property through the PLAIN keyset execution — the
- * page walks are identical, only the pivot vocabulary/meta differ.
+ * push-down; over the in-memory kernel the members read off the parent's
+ * `widgets` property through the PLAIN keyset execution and their `slot` off the
+ * pivot rows kept beside the shelf. The page walks and each `meta.pivot` are
+ * identical, only the pivot vocabulary differs.
  */
 abstract class BaseCursorShelfResource extends AbstractResource
 {

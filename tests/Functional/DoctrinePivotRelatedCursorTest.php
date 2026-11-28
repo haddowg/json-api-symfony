@@ -31,11 +31,6 @@ final class DoctrinePivotRelatedCursorTest extends PivotRelatedCursorConformance
         return DoctrineJsonApiTestKernel::class;
     }
 
-    protected function expectsPivotMeta(): bool
-    {
-        return true;
-    }
-
     #[Test]
     #[Group('spec:fetching-sorting')]
     #[Group('spec:fetching-pagination')]

@@ -20,12 +20,12 @@ use PHPUnit\Framework\Attributes\Test;
  * ({@see DoctrinePivotRelatedCursorTest}) kernels: shelf 1 holds every widget,
  * so a widget-attribute keyset walk must equal the primary `/cursorWidgets`
  * reference orders; shelf 2 holds only the `news` rows, proving the keyset runs
- * inside the parent scope. Where the two providers DIFFER is the documented
- * pivot boundary ({@see expectsPivotMeta()}): the Doctrine kernel executes the
- * fetch over the association entity — every member renders `meta.pivot` and
- * `?sort=slot` resolves (the Doctrine subclass walks the pivot-aliased keyset)
- * — while the in-memory provider is not pivot-aware, so the same request pages
- * through the PLAIN keyset with no pivot meta and `?sort=slot` stays a 400.
+ * inside the parent scope. Every member renders its `meta.pivot` on both. Where the
+ * two providers DIFFER is the pivot vocabulary: the Doctrine kernel executes the
+ * fetch over the association entity, so `?sort=slot` resolves (the Doctrine subclass
+ * walks the pivot-aliased keyset), while the in-memory provider reads its pivot rows
+ * but doesn't query them, so the same request pages through the PLAIN keyset and
+ * `?sort=slot` stays a 400.
  *
  * Cursor pages are count-free by design: no `last` link, no total, `meta.page`
  * in the cursor shape, and the cursor-pagination profile advertised exactly as
@@ -33,14 +33,6 @@ use PHPUnit\Framework\Attributes\Test;
  */
 abstract class PivotRelatedCursorConformanceTestCase extends JsonApiFunctionalTestCase
 {
-    /**
-     * Whether this kernel's provider is pivot-aware (the Doctrine reference): the
-     * fetch runs over the association entity, so every member carries
-     * `meta.pivot.slot`. False on the in-memory kernel — the documented pivot
-     * boundary: the same declaration pages through the plain keyset, pivot-less.
-     */
-    abstract protected function expectsPivotMeta(): bool;
-
     // --- forward / backward round-trips --------------------------------------
 
     #[Test]
@@ -191,11 +183,9 @@ abstract class PivotRelatedCursorConformanceTestCase extends JsonApiFunctionalTe
     #[Test]
     #[Group('spec:fetching-relationships')]
     #[Group('spec:fetching-pagination')]
-    public function everyPageMemberHonoursThePivotMetaBoundary(): void
+    public function everyPageMemberCarriesItsPivotRow(): void
     {
-        // Walk a full page: on the pivot-aware (Doctrine) kernel every member
-        // carries its association row's `meta.pivot.slot`; on the in-memory kernel
-        // the SAME declaration pages pivot-less (the documented boundary).
+        // Walk a full page: every member carries its pivot row's `meta.pivot.slot`.
         $response = $this->handle('/cursorShelves/2/pivotWidgets?sort=priority,id&page[size]=2');
         self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
 
@@ -209,18 +199,12 @@ abstract class PivotRelatedCursorConformanceTestCase extends JsonApiFunctionalTe
             $meta = $resource['meta'] ?? [];
             self::assertIsArray($meta);
 
-            if (!$this->expectsPivotMeta()) {
-                self::assertArrayNotHasKey('pivot', $meta, 'the in-memory provider is not pivot-aware: no pivot meta renders');
-
-                continue;
-            }
-
             $id = $resource['id'] ?? null;
             self::assertIsString($id);
             self::assertSame(
                 ['slot' => $slots[(int) $id]],
                 $meta['pivot'] ?? null,
-                \sprintf('member %s must carry its association row\'s pivot values', $id),
+                \sprintf('member %s must carry its pivot row\'s values', $id),
             );
         }
     }

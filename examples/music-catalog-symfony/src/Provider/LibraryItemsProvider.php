@@ -303,11 +303,12 @@ final class LibraryItemsProvider implements DataProviderInterface, PivotAwarePro
      * @return array<string, array<string, mixed>>
      */
     public function fetchRelatedPivotMap(
+        string $parentType,
         string $relatedType,
         object $parent,
         RelationInterface $relation,
     ): array {
-        return $this->doctrine->fetchRelatedPivotMap($relatedType, $parent, $relation);
+        return $this->doctrine->fetchRelatedPivotMap($parentType, $relatedType, $parent, $relation);
     }
 
     /**

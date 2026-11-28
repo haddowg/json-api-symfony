@@ -11,12 +11,15 @@ use haddowg\JsonApi\Collection\LinkRows\LinkRowWritePlan;
 use haddowg\JsonApi\Exception\ClientGeneratedIdAlreadyExists;
 use haddowg\JsonApi\Hydrator\Relationship\ToManyRelationship;
 use haddowg\JsonApi\Hydrator\Relationship\ToOneRelationship;
+use haddowg\JsonApi\Resource\Field\AbstractFieldValue;
 use haddowg\JsonApi\Resource\Field\Accessor;
+use haddowg\JsonApi\Resource\Field\BelongsToMany;
 use haddowg\JsonApi\Resource\Field\ForeignKey;
 use haddowg\JsonApi\Resource\Field\Mode;
 use haddowg\JsonApi\Resource\Field\MorphTo;
 use haddowg\JsonApi\Resource\Field\MorphToMany;
 use haddowg\JsonApi\Resource\Field\PivotRelationInterface;
+use haddowg\JsonApi\Resource\Field\Positions;
 use haddowg\JsonApi\Resource\Field\RelationInterface;
 use haddowg\JsonApi\Resource\Field\StoredIdForms;
 use haddowg\JsonApi\Schema\ResourceIdentifier;
@@ -229,6 +232,9 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
             } else {
                 $entity->{$property} = $members;
             }
+            if ($relation instanceof BelongsToMany) {
+                $this->writePivotRows($entity, $relation, $linkage, $members, $mode);
+            }
         }
 
         if ($flush) {
@@ -240,8 +246,7 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
 
     /**
      * Mutates a positioned to-many and writes each member's position onto it. A pivot
-     * relation's positions live on pivot rows, which the in-memory store doesn't hold, so
-     * only its members change.
+     * relation's positions live on its pivot rows, which {@see mutateRelationship()} writes.
      */
     public function mutatePositioned(
         string $type,
@@ -501,6 +506,71 @@ final class InMemoryDataPersister implements DataPersisterInterface, Transaction
      * The JSON:API id of a stored related object — read off its public `id`
      * member, the same shape the seed objects use.
      */
+    /**
+     * Writes the pivot rows of a `belongsToMany` that stores pivot fields, as a database join
+     * would hold them: a member that stays keeps its row, with the writable fields its
+     * `meta.pivot` sends updated; a new member gets a row of the fields writable on create;
+     * a member that leaves loses its row. A relation positioned by a pivot field gives each
+     * row its position, as a replace or an add places the member.
+     *
+     * @param list<object> $members the parent's members after the write, in linkage order
+     */
+    private function writePivotRows(object $parent, BelongsToMany $relation, ToManyRelationship $linkage, array $members, Mode $mode): void
+    {
+        $positionField = $relation->positionField();
+        $position = $positionField !== null ? ($relation->pivotField($positionField)?->column() ?? $positionField) : null;
+        if ($relation->storedPivotFields() === [] && $position === null) {
+            return;
+        }
+
+        $storage = $relation->column() ?? $relation->name();
+        // The rows live in this persister's store, which its transactions snapshot; writing
+        // them makes it the store readers find the parent's rows in.
+        $store = $this->store;
+        $held = $store->pivotRows($parent, $storage);
+
+        $sent = [];
+        foreach ($linkage->resourceIdentifiers as $identifier) {
+            $pivot = $identifier->id !== null ? ($identifier->meta['pivot'] ?? []) : null;
+            if (\is_array($pivot)) {
+                $sent[StoredIdForms::comparable($identifier->id ?? '')] = $pivot;
+            }
+        }
+
+        $rows = [];
+        foreach ($members as $member) {
+            // Keyed by the id the member's own store keys it by, the wire id a linkage names.
+            $key = StoredIdForms::comparable(InMemoryStore::holding($member)?->idOf($member) ?? $this->idOf($member));
+            $creating = !isset($held[$key]);
+            $row = $held[$key] ?? [];
+            $values = $sent[$key] ?? [];
+            foreach ($mode === Mode::Remove ? [] : $relation->writablePivotFields($creating) as $field) {
+                if (\array_key_exists($field->name(), $values)) {
+                    $row[$field->column() ?? $field->name()] = $field instanceof AbstractFieldValue
+                        ? $field->castWireValueFor($values[$field->name()], $creating)
+                        : $field->castWireValue($values[$field->name()]);
+                }
+            }
+            $rows[$key] = $row;
+        }
+
+        if ($position !== null && $mode !== Mode::Remove) {
+            $at = [];
+            foreach ($held as $key => $row) {
+                $at[(string) $key] = \is_numeric($row[$position] ?? null) ? (int) $row[$position] : 0;
+            }
+            $order = \array_map(\strval(...), \array_keys($rows));
+            $placed = $mode === Mode::Replace ? Positions::forReplace($order) : $at + Positions::forAdd($at, $order);
+            foreach ($placed as $key => $value) {
+                if (isset($rows[(string) $key])) {
+                    $rows[(string) $key][$position] = $value;
+                }
+            }
+        }
+
+        $store->writePivotRows($parent, $storage, $rows);
+    }
+
     private function idOf(object $member): string
     {
         /** @var mixed $id */

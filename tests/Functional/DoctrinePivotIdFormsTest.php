@@ -22,7 +22,7 @@ use Symfony\Component\Uid\Uuid;
  * case while the seat's player column holds it in lower case, and both types encode
  * their ids. A seat must still find its team and player wherever the pivot renders.
  * A coach keyed by a guid kept in capitals is addressed in either case, rendered in
- * lower case, and linked by its stored key. Doctrine-only: the in-memory provider stores no pivot rows.
+ * lower case, and linked by its stored key. Doctrine-only: the in-memory provider has no database key forms.
  */
 #[Group('spec:crud')]
 final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
@@ -242,6 +242,28 @@ final class DoctrinePivotIdFormsTest extends JsonApiFunctionalTestCase
             self::assertSame(self::COACH, $entityManager->getConnection()->fetchOne('SELECT coachId FROM pif_team WHERE id = ?', [Uuid::fromString($team)], ['uuid']));
         }
         self::assertSame(['type' => 'pif-coaches', 'id' => $wire], $this->toOne($this->data($this->get('/pif-teams/' . self::team(self::BLUE) . '?include=coach')), 'coach'));
+    }
+
+    #[Test]
+    public function aPivotLinkageRenderedWithoutAnIncludeCarriesEachMembersPivot(): void
+    {
+        // A team's squad reads its members through the seats whatever was included.
+        [$ann, $bob] = [\strtolower(self::ANN), \strtolower(self::BOB)];
+        $red = self::team(self::RED);
+
+        self::assertSame([$ann => 'captain', $bob => 'keeper'], $this->roles($this->data($this->get('/pif-teams/' . $red)), 'squad'));
+        self::assertSame([$ann => 'striker'], $this->roles($this->rowOf($this->get('/pif-teams?fields[pif-teams]=squad'), self::team(self::BLUE)), 'squad'));
+        $teams = $this->included($this->get('/pif-players/' . self::player(self::ANN) . '?include=teams'), 'pif-teams');
+        self::assertSame([$ann => 'captain', $bob => 'keeper'], $this->roles($teams[$red] ?? [], 'squad'));
+        self::assertSame([$ann => 'striker'], $this->roles($teams[self::team(self::BLUE)] ?? [], 'squad'));
+
+        $response = $this->handle('/pif-teams/' . $red, 'PATCH', ['data' => [
+            'type' => 'pif-teams',
+            'id' => $red,
+            'relationships' => ['squad' => ['data' => [['type' => 'pif-squads', 'id' => self::BOB, 'meta' => ['pivot' => ['role' => 'sub']]]]]],
+        ]]);
+        self::assertSame(200, $response->getStatusCode(), (string) $response->getContent());
+        self::assertSame([$bob => 'sub'], $this->roles($this->data($this->decode($response)), 'squad'));
     }
 
     /**
